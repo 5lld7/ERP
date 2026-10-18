@@ -1,0 +1,9 @@
+.local/
+__pycache__/
+*.pyc
+.venv/
+test-results/
+.vercel/
+.env
+.env.*
+!.env.example

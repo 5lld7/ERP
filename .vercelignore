@@ -1,0 +1,15 @@
+.git
+.local
+.venv
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+tests
+test-results
+docs/screenshots
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.zip
