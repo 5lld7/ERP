@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import erp
-from database import DatabaseUnavailable, remote_settings, safe_database_detail
+from database import DatabaseUnavailable, read_schema_version, remote_settings, safe_database_detail
 from server import Handler
 
 os.umask(0o077)
@@ -70,7 +70,7 @@ def ensure_ready():
                 except sqlite3.Error:
                     raise DatabaseUnavailable('DATABASE_CONNECTION') from None
                 try:
-                    version = startup_step('read_version', lambda: db.execute('PRAGMA user_version').fetchone()[0])
+                    version = startup_step('read_version', lambda: read_schema_version(db))
                 except DatabaseUnavailable:
                     raise
                 except sqlite3.Error:

@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('ERP_DATA_DIR', '/tmp/erp' if os.environ.get('VERCEL') else ROOT / '.local')).resolve()
 DB_PATH = DATA / 'erp.sqlite3'
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class BusinessError(Exception):
@@ -155,11 +155,14 @@ def connect(path=None):
 
 
 def initialize(path=None):
+    from database import read_schema_version, write_schema_version
     db = connect(path)
     try:
         db.execute('BEGIN IMMEDIATE')
+        if read_schema_version(db) > SCHEMA_VERSION:
+            raise sqlite3.OperationalError('Database schema is newer than this application')
         _initialize_schema(db)
-        db.execute(f'PRAGMA user_version={SCHEMA_VERSION}')
+        write_schema_version(db, SCHEMA_VERSION)
         db.commit()
     except Exception:
         db.rollback()

@@ -38,6 +38,23 @@ class Record(dict):
         return super().__getitem__(key)
 
 
+def read_schema_version(db):
+    """Read application metadata, accepting databases from the PRAGMA era."""
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='erp_metadata'").fetchone():
+        row = db.execute("SELECT value FROM erp_metadata WHERE key='schema_version'").fetchone()
+        if row is not None:
+            return int(row[0])
+    # Turso permits reading this PRAGMA but forbids assigning it. Old local
+    # databases and their backups used the SQLite header to store the version.
+    return int(db.execute('PRAGMA user_version').fetchone()[0])
+
+
+def write_schema_version(db, version):
+    """Persist within the caller's transaction using SQL supported by Turso."""
+    db.execute('CREATE TABLE IF NOT EXISTS erp_metadata (key TEXT PRIMARY KEY,value INTEGER NOT NULL)')
+    db.execute("INSERT INTO erp_metadata(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (int(version),))
+
+
 def checked(operation, *args, **kwargs):
     try:
         return operation(*args, **kwargs)
@@ -137,8 +154,7 @@ class Connection:
             for obj in schema:
                 if obj['type'] != 'table':
                     target.execute(obj['sql'])
-            version = self.execute('PRAGMA user_version').fetchone()[0]
-            target.execute(f'PRAGMA user_version={int(version)}')
+            write_schema_version(target, read_schema_version(self))
             if target.execute('PRAGMA quick_check').fetchone()[0] != 'ok' or target.execute('PRAGMA foreign_key_check').fetchone():
                 raise sqlite3.OperationalError('Backup integrity check failed')
             target.commit()
