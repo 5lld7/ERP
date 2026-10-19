@@ -32,6 +32,14 @@ def request_language(headers, path=''):
 
 
 ERRORS = {
+    'رابط عرض السعر غير صالح أو انتهت صلاحيته': 'The quotation link is invalid or has expired.',
+    'اختر العربية أو الإنجليزية لعرض السعر': 'Choose Arabic or English for the quotation.',
+    'أضف رقم واتساب العميل في بيانات العملاء قبل المشاركة': 'Add the customer WhatsApp number in the customer details before sharing.',
+    'رقم واتساب العميل غير صحيح. استخدم رقمًا دوليًا أو رقم موبايل مصريًا': 'The customer WhatsApp number is invalid. Use an international number or an Egyptian mobile number.',
+    'عرض السعر PDF والمشاركة متاحان للمعاينات فقط': 'Quotation PDFs and sharing are available for inspections only.',
+    'اختر العميل في المعاينة قبل مشاركة عرض السعر': 'Select the inspection customer before sharing the quotation.',
+    'العملة المحددة غير مدعومة': 'The selected currency is not supported.',
+    'لا يمكن تغيير العملة الأساسية بعد ترحيل عمليات مالية': 'The base currency cannot be changed after posting financial transactions.',
     'كلمة المرور يجب أن تكون بين 10 و256 حرفًا': 'Password must contain between 10 and 256 characters.',
     'ليس لديك صلاحية لتنفيذ هذه العملية': 'You do not have permission to perform this action.',
     'راجع عمر الأصل وقيمته التخريدية': 'Check the asset useful life and salvage value.',

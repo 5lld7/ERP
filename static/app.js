@@ -42,6 +42,7 @@ const icons = {
     '<path d="M20 8V5a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h16v12H5a3 3 0 0 1-3-3V6"/><path d="M21 12h-6v5h6M17 14.5h.01"/>',
   cart: '<path d="M2 3h3l3 13h11l3-10H6M9 21h.01M19 21h.01"/><circle cx="9" cy="20" r="1"/><circle cx="19" cy="20" r="1"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  whatsapp: '<path d="M21 11.5a9 9 0 0 1-13 8L3 21l1.5-5A9 9 0 1 1 21 11.5Z"/><path d="M8 7c0 5 4 9 9 9l1-3-3-1-1 1c-2-1-3-2-4-4l1-1-1-3Z"/>',
   bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
   chevron: '<path d="m9 5 7 7-7 7"/>',
   arrow: '<path d="M19 12H5m6-6-6 6 6 6"/>',
@@ -76,8 +77,26 @@ const icons = {
 function icon(name, cls = "") {
   return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.file}</svg>`;
 }
-const money = (n) =>
-  `${numeric(n)} <small>${esc((state.boot?.settings.currency || "ج.م") === "ج.م" ? t("ج.م") : state.boot.settings.currency)}</small>`;
+// Keep legacy company currency values readable without changing financial data.
+function currencyCode(value = state.boot?.settings.currency || "EGP") {
+  const aliases = { "ج.م": "EGP", "جنيه مصري": "EGP", "ر.س": "SAR", "ريال سعودي": "SAR", "د.إ": "AED", "درهم إماراتي": "AED", "ر.ق": "QAR", "ريال قطري": "QAR", "€": "EUR", "£": "GBP", "$": "USD" };
+  const candidate = aliases[value] || String(value).toUpperCase();
+  return state.boot?.currencies?.some((item) => item.code === candidate) ? candidate : value;
+}
+function currencyText(value = state.boot?.settings.currency || "EGP") {
+  const currency = state.boot?.currencies?.find((item) => item.code === currencyCode(value));
+  return currency ? currency[window.I18n.language === "en" ? "symbol_en" : "symbol_ar"] || currency.code : value;
+}
+const money = (n) => `${numeric(n)} <small>${esc(currencyText())}</small>`;
+function currencyField() {
+  const current = currencyCode();
+  const currencies = state.boot.currencies || [];
+  const known = currencies.some((item) => item.code === current);
+  return `<label class="field"><span>العملة الأساسية للشركة <b>*</b></span><select name="currency" required ${state.boot.currency_locked ? "disabled" : ""} aria-describedby="currency-help">${!known ? `<option value="${esc(current)}" selected>${esc(state.boot.settings.currency)}</option>` : ""}${currencies.map((item) => `<option value="${esc(item.code)}" ${current === item.code ? "selected" : ""}>${esc(item.code)} — ${esc(item[window.I18n.language === "en" ? "label_en" : "label_ar"])}</option>`).join("")}</select><small id="currency-help">${state.boot.currency_locked ? "تم تثبيت العملة لوجود قيود مالية. حافظًا على الأرصدة، لا يمكن تغييرها." : "تستخدم الشركة عملة أساسية واحدة لكل الحسابات والفواتير. لا يتم تحويل المبالغ تلقائيًا."}</small></label>`;
+}
+function accountingCurrencyPanel() {
+  return `<section class="panel settings-panel currency-panel"><header class="panel-header"><div><h2>عملة الحسابات</h2><p>اختر العملة الأساسية للشركة قبل تسجيل أول حركة مالية.</p></div>${icon("wallet")}</header>${allowed("admin") ? `<form id="currency-form"><div class="form-grid one">${currencyField()}</div><div class="form-error" role="alert"></div>${!state.boot.currency_locked ? '<button class="btn primary" type="submit">حفظ العملة الأساسية</button>' : ""}</form>` : `<p>${esc(currencyText())}</p><p class="muted">يمكن لمسؤول النظام تحديد العملة الأساسية للشركة.</p>`}</section>`;
+}
 const modules = {
   accounting: {
     name: "الحسابات المالية",
@@ -264,6 +283,7 @@ const colNames = {
   employee: "الموظف",
   installment: "القسط",
   quantity: "الكمية",
+  price: "السعر",
   cost: "التكلفة",
   min_stock: "حد الطلب",
   expiry_date: "الصلاحية",
@@ -401,7 +421,7 @@ function empty(
   return `<div class="empty">${icon("file")}<h3>${esc(t(message))}</h3><p>${esc(detailIsLocalized ? detail : t(detail))}</p></div>`;
 }
 function modal(title, content, wide = false) {
-  setHTML($("#modal-root"), `<div class="modal-backdrop"><section class="modal ${wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><div><span class="eyebrow">مدار / مساحة العمل</span><h2 id="modal-title">${esc(t(title))}</h2></div>${button(icon("close"), "close", "icon-button", 'aria-label="إغلاق"')}</header>${content}</section></div>`);
+  setHTML($("#modal-root"), `<div class="modal-backdrop"><section class="modal ${wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><div><span class="eyebrow">Serviq / مساحة العمل</span><h2 id="modal-title">${esc(t(title))}</h2></div>${button(icon("close"), "close", "icon-button", 'aria-label="إغلاق"')}</header>${content}</section></div>`);
   $(".modal").focus();
   setTimeout(
     () => $(".modal input:not([type=hidden]), .modal select")?.focus(),
@@ -455,7 +475,7 @@ async function refreshBoot() {
 }
 function renderAuth(setup, setupTokenRequired = false) {
   state.auth = { setup, setupTokenRequired };
-  setHTML($("#app"), `<main class="auth-layout"><section class="auth-story"><a class="brand"><span class="brand-mark">${icon("chart")}</span><span>مدار<small>نظام إدارة الأعمال</small></span></a><div><span class="pill light">مساحة واحدة. أعمال مترابطة.</span><h1>كل تفاصيل شغلك،<br><em>في مدار واحد.</em></h1><p>الحسابات والمخزون والمبيعات وفريق العمل.<br>نظام عربي يجمع الصورة كاملة.</p><div class="auth-orbit"><div class="orbit-center">${icon("grid")}</div><span>${icon("wallet")} الحسابات</span><span>${icon("box")} المخازن</span><span>${icon("chart")} المبيعات</span><span>${icon("users")} الموظفون</span></div></div><small>مصمم لتفاصيل يومك، وقابل للنمو مع أعمالك.</small></section><section class="auth-panel">${languageButton("auth-language")}<div class="auth-card"><span class="eyebrow">أهلًا بك في مدار</span><h2>${setup ? "لنبدأ حكاية شركتك" : "سعداء برجوعك"}</h2><p>${setup ? "أنشئ حساب المسؤول الأول. بيانات شركتك تبدأ من هنا." : "سجّل دخولك وتابع أعمالك من مكان واحد."}</p><form id="auth-form" data-setup="${setup}"><div class="form-grid one">${setup ? inputField({ key: "company_name", label: "اسم الشركة", required: true }) + inputField({ key: "name", label: "اسم المسؤول", required: true }) : ""}${setup && setupTokenRequired ? inputField({ key: "setup_token", label: "رمز إعداد المدير الأول", type: "password", required: true }) : ""}${inputField({ key: "username", label: "اسم المستخدم", required: true })}${inputField({ key: "password", label: "كلمة المرور", type: "password", required: true })}</div><p class="form-error" role="alert"></p><button class="btn primary block" type="submit">${setup ? "إنشاء مساحة العمل" : "تسجيل الدخول"} ${icon("arrow")}</button></form><div class="auth-security">${icon("shield")} ${setup ? "اختر كلمة مرور من 10 أحرف على الأقل؛ لا توجد كلمة مرور افتراضية." : "بياناتك محفوظة في قاعدة بيانات مساحة عملك."}</div></div><small class="auth-bottom">مدار ERP · إدارة أبسط، قرارات أوضح</small></section></main>`);
+  setHTML($("#app"), `<main class="auth-layout"><section class="auth-story"><a class="brand"><span class="brand-mark">${icon("chart")}</span><span>Serviq<small>نظام إدارة الأعمال</small></span></a><div><span class="pill light">مساحة واحدة. أعمال مترابطة.</span><h1>كل تفاصيل شغلك،<br><em>في مساحة واحدة.</em></h1><p>الحسابات والمخزون والمبيعات وفريق العمل.<br>نظام عربي يجمع الصورة كاملة.</p><div class="auth-orbit"><div class="orbit-center">${icon("grid")}</div><span>${icon("wallet")} الحسابات</span><span>${icon("box")} المخازن</span><span>${icon("chart")} المبيعات</span><span>${icon("users")} الموظفون</span></div></div><small>مصمم لتفاصيل يومك، وقابل للنمو مع أعمالك.</small></section><section class="auth-panel">${languageButton("auth-language")}<div class="auth-card"><span class="eyebrow">أهلًا بك في Serviq</span><h2>${setup ? "لنبدأ حكاية شركتك" : "سعداء برجوعك"}</h2><p>${setup ? "أنشئ حساب المسؤول الأول. بيانات شركتك تبدأ من هنا." : "سجّل دخولك وتابع أعمالك من مكان واحد."}</p><form id="auth-form" data-setup="${setup}"><div class="form-grid one">${setup ? inputField({ key: "company_name", label: "اسم الشركة", required: true }) + inputField({ key: "name", label: "اسم المسؤول", required: true }) : ""}${setup && setupTokenRequired ? inputField({ key: "setup_token", label: "رمز إعداد المدير الأول", type: "password", required: true }) : ""}${inputField({ key: "username", label: "اسم المستخدم", required: true })}${inputField({ key: "password", label: "كلمة المرور", type: "password", required: true })}</div><p class="form-error" role="alert"></p><button class="btn primary block" type="submit">${setup ? "إنشاء مساحة العمل" : "تسجيل الدخول"} ${icon("arrow")}</button></form><div class="auth-security">${icon("shield")} ${setup ? "اختر كلمة مرور من 10 أحرف على الأقل؛ لا توجد كلمة مرور افتراضية." : "بياناتك محفوظة في قاعدة بيانات مساحة عملك."}</div></div><small class="auth-bottom">Serviq ERP · إدارة أبسط، قرارات أوضح</small></section></main>`);
 }
 function moduleOf(page) {
   for (const [key, m] of Object.entries(modules))
@@ -466,7 +486,7 @@ function shell() {
   const page = state.page,
     module = moduleOf(page),
     u = state.boot.user;
-  setHTML($("#app"), `<div class="app-shell"><aside class="sidebar"><a href="#/dashboard" class="brand"><span class="brand-mark">${icon("chart")}</span><span>مدار<small>نظام إدارة الأعمال</small></span></a><div class="workspace-label">مساحة العمل</div><a class="nav-item ${page === "dashboard" ? "active" : ""}" href="#/dashboard">${icon("grid")}<span>نظرة عامة</span></a><div class="nav-caption">إدارة أعمالك</div><nav>${Object.entries(
+  setHTML($("#app"), `<div class="app-shell"><aside class="sidebar"><a href="#/dashboard" class="brand"><span class="brand-mark">${icon("chart")}</span><span>Serviq<small>نظام إدارة الأعمال</small></span></a><div class="workspace-label">مساحة العمل</div><a class="nav-item ${page === "dashboard" ? "active" : ""}" href="#/dashboard">${icon("grid")}<span>نظرة عامة</span></a><div class="nav-caption">إدارة أعمالك</div><nav>${Object.entries(
       modules,
     )
       .filter(([key]) => allowed(key))
@@ -487,7 +507,7 @@ function shell() {
       )
       .join(
         "",
-      )}<a class="nav-item ${page === "reports" ? "active" : ""}" href="#/reports">${icon("file")}<span>التقارير والتحليلات</span></a></nav><div class="sidebar-bottom"><div class="sync-card"><span class="sync-dot"></span><div>بيانات مترابطة<small>كل الأقسام في قاعدة بيانات واحدة</small></div>${icon("shield")}</div>${u.role === "admin" ? `<a class="nav-item ${page === "settings" ? "active" : ""}" href="#/settings">${icon("settings")}<span>إعدادات النظام</span></a>` : ""}<button class="user-card" data-action="profile"><span class="avatar">${esc(u.name.slice(0, 1))}</span><span>${esc(u.name)}<small>${esc(t(state.boot.roles[u.role]))}</small></span>${icon("chevron")}</button></div></aside><div class="mobile-shade" data-action="menu"></div><div class="main-wrap"><header class="topbar">${button(icon("menu"), "menu", "icon-button menu-toggle", 'aria-label="فتح القائمة"')}<div class="breadcrumbs">مساحة العمل ${icon("chevron")} <strong>${esc(t(title(page)))}</strong></div><div class="topbar-tools">${languageButton()}<div class="search-wrap">${icon("search")}<input type="search" id="global-search" placeholder="ابحث في الصفحة الحالية…" aria-label="ابحث في الصفحة الحالية" value="${esc(state.search)}"><kbd>/</kbd></div><button class="icon-button notification" data-action="notifications" aria-label="التنبيهات">${icon("bell")}<i></i></button><span class="topbar-divider"></span><span class="company-label">${icon("building")}${esc(state.boot.settings.company_name)}</span></div></header><main id="main" class="main-content"><div class="loading">جارٍ تحميل البيانات…</div></main><footer class="page-footer"><span>مدار <b>ERP</b> <i>•</i> كل تفاصيل أعمالك، مترابطة.</span><span><i class="live-dot"></i> متصل بقاعدة البيانات</span></footer></div></div>`);
+      )}<a class="nav-item ${page === "reports" ? "active" : ""}" href="#/reports">${icon("file")}<span>التقارير والتحليلات</span></a></nav><div class="sidebar-bottom"><div class="sync-card"><span class="sync-dot"></span><div>بيانات مترابطة<small>كل الأقسام في قاعدة بيانات واحدة</small></div>${icon("shield")}</div>${u.role === "admin" ? `<a class="nav-item ${page === "settings" ? "active" : ""}" href="#/settings">${icon("settings")}<span>إعدادات النظام</span></a>` : ""}<button class="user-card" data-action="profile"><span class="avatar">${esc(u.name.slice(0, 1))}</span><span>${esc(u.name)}<small>${esc(t(state.boot.roles[u.role]))}</small></span>${icon("chevron")}</button></div></aside><div class="mobile-shade" data-action="menu"></div><div class="main-wrap"><header class="topbar">${button(icon("menu"), "menu", "icon-button menu-toggle", 'aria-label="فتح القائمة"')}<div class="breadcrumbs">مساحة العمل ${icon("chevron")} <strong>${esc(t(title(page)))}</strong></div><div class="topbar-tools"><div class="search-wrap">${icon("search")}<input type="search" id="global-search" placeholder="ابحث في الصفحة الحالية…" aria-label="ابحث في الصفحة الحالية" value="${esc(state.search)}"><kbd>/</kbd></div><div class="notification-tools">${languageButton()}<button class="icon-button notification" data-action="notifications" aria-label="التنبيهات">${icon("bell")}<i></i></button></div><span class="topbar-divider"></span><span class="company-label">${icon("building")}${esc(state.boot.settings.company_name)}</span></div></header><main id="main" class="main-content"><div class="loading">جارٍ تحميل البيانات…</div></main><footer class="page-footer"><span>Serviq <b>ERP</b> <i>•</i> كل تفاصيل أعمالك، مترابطة.</span><span><i class="live-dot"></i> متصل بقاعدة البيانات</span></footer></div></div>`);
 }
 function pageHeader(titleText, subtitle, actions = "", titleIsHTML = false) {
   return `<div class="page-heading"><div><div class="eyebrow">${esc(state.boot.settings.company_name)} <span>/</span> مساحة العمل</div><h1>${titleIsHTML ? titleText : esc(t(titleText))}</h1><p>${esc(t(subtitle))}</p></div><div class="heading-actions">${actions}</div></div>`;
@@ -504,6 +524,8 @@ async function renderPage() {
   }
   shell();
   try {
+    // Refresh the lock when entering accounting/settings after financial posting.
+    if (["accounting", "settings"].includes(state.page)) await refreshBoot();
     let html;
     if (state.page === "dashboard") html = await dashboardPage();
     else if (modules[state.page]) html = modulePage(state.page);
@@ -567,9 +589,9 @@ async function dashboardPage() {
   const path = coords
     .map((p, i) => `${i ? "L" : "M"} ${p[0]} ${p[1]}`)
     .join(" ");
-  const chart = `<svg class="sales-chart" viewBox="0 0 570 185" role="img" aria-label="مبيعات آخر ستة أشهر"><defs><linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2f927c" stop-opacity=".24"/><stop offset="100%" stop-color="#2f927c" stop-opacity="0"/></linearGradient></defs>${[36, 74, 112, 150].map((y) => `<path d="M25 ${y}H555" stroke="#e9eeec" stroke-dasharray="4 5"/>`).join("")}<path d="${path} L522 153 L42 153Z" fill="url(#chart-fill)"/><path d="${path}" fill="none" stroke="#27866e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${coords.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="#fff" stroke="#27866e" stroke-width="2"><title>${esc(d.chart[i].month)}: ${numeric(d.chart[i].value)}</title></circle><text x="${p[0]}" y="178" text-anchor="middle" fill="#86908c" font-size="10">${new Intl.DateTimeFormat(window.I18n.locale, { month: "short" }).format(new Date(d.chart[i].month + "-15"))}</text>`).join("")}</svg>`;
+  const chart = `<svg class="sales-chart" viewBox="0 0 570 185" role="img" aria-label="مبيعات آخر ستة أشهر"><defs><linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0F766E" stop-opacity=".24"/><stop offset="100%" stop-color="#0F766E" stop-opacity="0"/></linearGradient></defs>${[36, 74, 112, 150].map((y) => `<path d="M25 ${y}H555" stroke="#e5eaf0" stroke-dasharray="4 5"/>`).join("")}<path d="${path} L522 153 L42 153Z" fill="url(#chart-fill)"/><path d="${path}" fill="none" stroke="#0F766E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${coords.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="#fff" stroke="#0F766E" stroke-width="2"><title>${esc(d.chart[i].month)}: ${numeric(d.chart[i].value)}</title></circle><text x="${p[0]}" y="178" text-anchor="middle" fill="#6c7e93" font-size="10">${new Intl.DateTimeFormat(window.I18n.locale, { month: "short" }).format(new Date(d.chart[i].month + "-15"))}</text>`).join("")}</svg>`;
   return `${pageHeader(`${esc(t("أهلًا،"))} ${esc(state.boot.user.name.split(" ")[0])} 👋`, "إليك نظرة شاملة على أعمالك اليوم.", `<span class="date-chip">${icon("calendar")}${esc(date)}</span>${allowed("sales", true) ? button(`${icon("plus")} فاتورة جديدة`, "new-doc", "primary", 'data-kind="sale"') : ""}`, true)}
- <section class="welcome-banner"><div><span class="pill light"><i class="live-dot"></i> أعمالك على المسار الصحيح</span><h2>صورة أوضح.<br>قرارات <em>أذكى.</em></h2><p>كل أقسام شركتك تعمل معًا. تابع الأداء،<br>واكتشف ما يحتاج انتباهك، من مكان واحد.</p><a class="hero-link" href="#/reports">استكشف تقارير أعمالك ${icon("arrow")}</a></div><div class="hero-art" aria-hidden="true"><div class="hero-rings"></div><div class="float-card inventory-float">${icon("box")}<span>المخزون<small>تحديث مع كل حركة</small></span><i class="mini-dot"></i></div><div class="hero-core">${icon("grid")}<span>مدار</span><small>كل شيء متصل</small></div><div class="float-card finance-float">${icon("wallet")}<span>الحسابات<small>قيود مترابطة</small></span>${icon("check")}</div><div class="float-mini">${icon("users")}</div><div class="hero-cross cross-one">+</div><div class="hero-cross cross-two">+</div></div><span class="banner-tag">YOUR BUSINESS, CONNECTED</span></section>
+ <section class="welcome-banner"><div><span class="pill light"><i class="live-dot"></i> أعمالك على المسار الصحيح</span><h2>صورة أوضح.<br>قرارات <em>أذكى.</em></h2><p>كل أقسام شركتك تعمل معًا. تابع الأداء،<br>واكتشف ما يحتاج انتباهك، من مكان واحد.</p><a class="hero-link" href="#/reports">استكشف تقارير أعمالك ${icon("arrow")}</a></div><div class="hero-art" aria-hidden="true"><div class="hero-rings"></div><div class="float-card inventory-float">${icon("box")}<span>المخزون<small>تحديث مع كل حركة</small></span><i class="mini-dot"></i></div><div class="hero-core">${icon("grid")}<span>Serviq</span><small>كل شيء متصل</small></div><div class="float-card finance-float">${icon("wallet")}<span>الحسابات<small>قيود مترابطة</small></span>${icon("check")}</div><div class="float-mini">${icon("users")}</div><div class="hero-cross cross-one">+</div><div class="hero-cross cross-two">+</div></div><span class="banner-tag">YOUR BUSINESS, CONNECTED</span></section>
  <section class="stats-grid">${stats.map(([label, key, ic, color, desc]) => `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="icon-tile ${color}">${icon(ic)}</span></div><div class="stat-number">${key === "employees" ? numeric(d[key]) : money(d[key])}</div><div class="stat-meta"><span class="tiny-dot ${color}"></span>${esc(t(desc))}</div></article>`).join("")}</section>
  <div class="section-label"><h2>أقسام أعمالك</h2><span>كل التفاصيل، في متناولك</span></div><section class="module-grid">${Object.entries(
    modules,
@@ -595,7 +617,7 @@ async function dashboardPage() {
 }
 function modulePage(key) {
   const m = modules[key];
-  return `${pageHeader(m.name, m.description)}<section class="module-intro ${m.color}"><span class="intro-icon">${icon(m.icon)}</span><div><h2>تفاصيل أكثر. إدارة أسهل.</h2><p>ابدأ من البيانات الأساسية، ثم سجّل العمليات وتابع نتائجها في التقارير.</p></div><span class="pill">${icon("shield")} مرتبط بباقي الأقسام</span></section>${m.groups
+  return `${pageHeader(m.name, m.description)}${key === "accounting" ? accountingCurrencyPanel() : ""}<section class="module-intro ${m.color}"><span class="intro-icon">${icon(m.icon)}</span><div><h2>تفاصيل أكثر. إدارة أسهل.</h2><p>ابدأ من البيانات الأساسية، ثم سجّل العمليات وتابع نتائجها في التقارير.</p></div><span class="pill">${icon("shield")} مرتبط بباقي الأقسام</span></section>${m.groups
     .map(
       ([name, pages]) =>
         `<div class="section-label"><h2>${name}</h2></div><div class="feature-grid">${pages
@@ -721,7 +743,7 @@ function resourceModal(name, id = null) {
 async function documentsPage(kind) {
   state.rows = await api(`documents?kind=${kind}`);
   const m = state.boot.kinds[kind][1];
-  return `${pageHeader(state.boot.kinds[kind][0], "المستند المرحّل يحدّث المخزون والحسابات تلقائيًا ولا يمكن حذفه.", allowed(m, true) ? button(`${icon("plus")} مستند جديد`, "new-doc", "primary", `data-kind="${kind}"`) : "")}<section class="panel">${tableTools(state.rows.length, "ابحث برقم المستند أو الطرف…", '<select id="status-filter" aria-label="فلتر الحالة"><option value="">كل الحالات</option><option value="posted">مرحّل</option><option value="draft">مسودة</option></select>')}${state.rows.length ? table(state.rows, kind === "inspection" ? ["number", "date", "party", "progress", "appointment_date", "status", "total"] : ["number", "date", "party", "warehouse", "status", "total", "paid"], (r) => `${button(icon("eye"), "view-doc", "icon-button", `data-id="${r.id}" aria-label="عرض المستند"`)}${kind === "inspection" && allowed(m, true) ? button(icon("clock"), "inspection-progress", "icon-button", `data-id="${r.id}" aria-label="متابعة حالة المعاينة"`) : ""}${r.status === "draft" && allowed(m, true) ? button(icon("check"), "post-doc", "icon-button", `data-id="${r.id}" aria-label="ترحيل"`) + button(icon("trash"), "delete-doc", "icon-button danger-text", `data-id="${r.id}" aria-label="حذف المسودة"`) : ""}${["inspection", "purchase_order", "sale", "purchase"].includes(kind) && r.status === "posted" && allowed(m, true) ? button(icon("arrow"), "convert-doc", "icon-button", `data-id="${r.id}" aria-label="${["sale", "purchase"].includes(kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة"}"`) : ""}`) : empty()}</section>`;
+  return `${pageHeader(state.boot.kinds[kind][0], "المستند المرحّل يحدّث المخزون والحسابات تلقائيًا ولا يمكن حذفه.", allowed(m, true) ? button(`${icon("plus")} مستند جديد`, "new-doc", "primary", `data-kind="${kind}"`) : "")}<section class="panel">${tableTools(state.rows.length, "ابحث برقم المستند أو الطرف…", '<select id="status-filter" aria-label="فلتر الحالة"><option value="">كل الحالات</option><option value="posted">مرحّل</option><option value="draft">مسودة</option></select>')}${state.rows.length ? table(state.rows, kind === "inspection" ? ["number", "date", "party", "progress", "appointment_date", "status", "total"] : ["number", "date", "party", "warehouse", "status", "total", "paid"], (r) => `${button(icon("eye"), "view-doc", "icon-button", `data-id="${r.id}" aria-label="عرض المستند"`)}${kind === "inspection" ? inspectionActions(r.id, true) : ""}${kind === "inspection" && allowed(m, true) ? button(icon("clock"), "inspection-progress", "icon-button", `data-id="${r.id}" aria-label="متابعة حالة المعاينة"`) : ""}${r.status === "draft" && allowed(m, true) ? button(icon("check"), "post-doc", "icon-button", `data-id="${r.id}" aria-label="ترحيل"`) + button(icon("trash"), "delete-doc", "icon-button danger-text", `data-id="${r.id}" aria-label="حذف المسودة"`) : ""}${["inspection", "purchase_order", "sale", "purchase"].includes(kind) && r.status === "posted" && allowed(m, true) ? button(icon("arrow"), "convert-doc", "icon-button", `data-id="${r.id}" aria-label="${["sale", "purchase"].includes(kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة"}"`) : ""}`) : empty()}</section>`;
 }
 async function documentModal(kind, source = null) {
   state.catalog = await api("catalog");
@@ -859,12 +881,49 @@ function addLine(pid) {
   }
   renderDocLines();
 }
+function inspectionActions(id, compact = false) {
+  return button(`${icon("download")}${compact ? "" : " تنزيل عرض السعر PDF"}`, "quotation-pdf", compact ? "icon-button" : "primary", `data-id="${id}" aria-label="تنزيل عرض السعر PDF" title="تنزيل عرض السعر PDF"`)
+    + (allowed("sales", true) ? button(`${icon("whatsapp")}${compact ? "" : " إرسال إلى واتساب العميل"}`, "quotation-whatsapp", compact ? "icon-button" : "secondary", `data-id="${id}" aria-label="إرسال إلى واتساب العميل" title="إرسال إلى واتساب العميل"`) : "");
+}
+async function shareQuotation(id, buttonElement) {
+  // Open during the gesture, then detach the opener before navigating externally.
+  // WhatsApp only prepares the message; the user chooses whether to send it.
+  const popup = window.open("about:blank", "_blank");
+  if (popup) {
+    popup.opener = null;
+    popup.document.title = "Serviq";
+    popup.document.body.textContent = t("جارٍ تجهيز عرض السعر…");
+  }
+  buttonElement.disabled = true;
+  try {
+    const quote = await api(`documents/${id}/share?lang=${window.I18n.language}`, { method: "POST", body: {} });
+    const phone = String(quote.whatsapp_phone || "").replace(/^\+/, "");
+    if (!/^[1-9]\d{7,14}$/.test(phone)) throw new Error("أضف رقم واتساب صحيحًا للعميل مع كود الدولة، ثم حاول مرة أخرى.");
+    const shared = new URL(quote.url, location.origin);
+    if (shared.origin !== location.origin || shared.pathname !== "/api/quotations/shared" || !shared.searchParams.get("token")) throw new Error("تعذر تجهيز رابط عرض السعر");
+    const message = window.I18n.language === "en"
+      ? `Hello ${quote.customer_name},\nHere is your inspection quotation ${quote.number} from ${state.boot.settings.company_name}.\nTotal: ${numeric(quote.total)} ${currencyText(quote.currency)}\nDownload your PDF quotation (valid for 7 days):\n${shared.href}`
+      : `أهلًا ${quote.customer_name}،\nعرض سعر المعاينة ${quote.number} من ${state.boot.settings.company_name}.\nالإجمالي: ${numeric(quote.total)} ${currencyText(quote.currency)}\nتنزيل عرض السعر PDF (الرابط صالح لمدة 7 أيام):\n${shared.href}`;
+    const whatsapp = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    if (popup && !popup.closed) {
+      popup.location.replace(whatsapp);
+      toast("تم تجهيز الرسالة في واتساب. اضغط إرسال هناك لإرسالها للعميل.");
+    } else {
+      modal("إرسال عرض السعر عبر واتساب", `<div class="modal-body"><p>عرض السعر جاهز. افتح واتساب وراجع الرسالة، ثم اضغط إرسال.</p><a class="btn primary" href="${esc(whatsapp)}" target="_blank" rel="noopener noreferrer">فتح واتساب العميل</a><p class="muted">رابط PDF خاص بالعميل وصالح لمدة 7 أيام. شاركه مع العميل فقط.</p></div>`);
+    }
+  } catch (error) {
+    if (popup && !popup.closed) popup.close();
+    throw error;
+  } finally {
+    buttonElement.disabled = false;
+  }
+}
 async function viewDocument(id) {
   const d = await api(`documents/${id}`);
   const m = state.boot.kinds[d.kind][1];
   modal(
     d.number,
-    `<div class="modal-body printable" id="print-content"><div class="invoice-header"><div><h2>${esc(state.boot.settings.company_name)}</h2><p>${esc(state.boot.settings.company_address)}</p><p>الرقم الضريبي: ${esc(state.boot.settings.tax_number || "—")}</p></div><div><span class="eyebrow">${esc(t(state.boot.kinds[d.kind][0]))}</span><h2 class="num">${esc(d.number)}</h2>${badge(d.status)}</div></div><div class="detail-grid"><div><small>التاريخ</small><b>${esc(dateLabel(d.date))}</b></div><div><small>العميل / المورد</small><b>${esc(d.customer || d.supplier || "—")}</b></div><div><small>المخزن</small><b>${esc(d.warehouse)}</b></div><div><small>الاستحقاق</small><b>${esc(dateLabel(d.due_date))}</b></div>${d.kind === "inspection" ? `<div><small>مرحلة المعاينة</small><b>${esc(t(d.progress))}</b></div><div><small>موعد وموقع المعاينة</small><b>${esc(dateLabel(d.appointment_date || "—"))} — ${esc(d.location || "—")}</b></div>` : ""}${d.target_warehouse ? `<div><small>المخزن المستلم</small><b>${esc(d.target_warehouse)}</b></div>` : ""}</div>${table(d.lines, ["sku", "name", "quantity", "price", "total"])}<div class="invoice-summary detail-summary"><div><span>إجمالي الأصناف</span><b>${money(d.subtotal)}</b></div><div><span>خصم</span><b>${money(d.discount)}</b></div><div><span>الضريبة</span><b>${money(d.tax)}</b></div><div class="grand-total"><span>الإجمالي</span><b>${money(d.total)}</b></div><div><span>المدفوع / المتبقي</span><b>${money(d.paid)} / ${money(d.total - d.paid)}</b></div></div><p class="muted">${esc(d.note)}</p><p class="print-signatures">توقيع المستلم: __________________ &nbsp; توقيع المسؤول: __________________</p></div><footer class="modal-footer">${button(`${icon("print")} طباعة`, "print", "primary")}${d.status === "draft" && allowed(m, true) ? button("ترحيل المستند", "post-doc", "secondary", `data-id="${id}"`) : ""}${d.status === "posted" && ["inspection", "purchase_order", "sale", "purchase"].includes(d.kind) && allowed(m, true) ? button(["sale", "purchase"].includes(d.kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة", "convert-doc", "secondary", `data-id="${id}"`) : ""}${["sale", "purchase", "sale_return", "purchase_return"].includes(d.kind) && d.status === "posted" && d.paid < d.total && allowed("accounting", true) ? button("تسجيل سداد", "pay-doc", "secondary", `data-id="${id}"`) : ""}</footer>`,
+    `<div class="modal-body printable" id="print-content"><div class="invoice-header"><div><h2>${esc(state.boot.settings.company_name)}</h2><p>${esc(state.boot.settings.company_address)}</p><p>الرقم الضريبي: ${esc(state.boot.settings.tax_number || "—")}</p></div><div><span class="eyebrow">${esc(t(d.kind === "inspection" ? "عرض سعر معاينة" : state.boot.kinds[d.kind][0]))}</span><h2 class="num">${esc(d.number)}</h2>${badge(d.status)}</div></div><div class="detail-grid"><div><small>التاريخ</small><b>${esc(dateLabel(d.date))}</b></div><div><small>${d.kind === "inspection" ? "العميل" : "العميل / المورد"}</small><b>${esc(d.customer || d.supplier || "—")}</b></div><div><small>المخزن</small><b>${esc(d.warehouse)}</b></div>${d.kind !== "inspection" ? `<div><small>الاستحقاق</small><b>${esc(dateLabel(d.due_date))}</b></div>` : ""}${d.kind === "inspection" ? `<div><small>مرحلة المعاينة</small><b>${esc(t(d.progress))}</b></div><div><small>موعد وموقع المعاينة</small><b>${esc(dateLabel(d.appointment_date || "—"))} — ${esc(d.location || "—")}</b></div>` : ""}${d.target_warehouse ? `<div><small>المخزن المستلم</small><b>${esc(d.target_warehouse)}</b></div>` : ""}</div>${table(d.lines, ["sku", "name", "quantity", "price", "total"])}<div class="invoice-summary detail-summary"><div><span>إجمالي الأصناف</span><b>${money(d.subtotal)}</b></div><div><span>خصم</span><b>${money(d.discount)}</b></div><div><span>الضريبة</span><b>${money(d.tax)}</b></div><div class="grand-total"><span>الإجمالي</span><b>${money(d.total)}</b></div>${d.kind !== "inspection" ? `<div><span>المدفوع / المتبقي</span><b>${money(d.paid)} / ${money(d.total - d.paid)}</b></div>` : ""}</div><p class="muted">${esc(d.note)}</p><p class="print-signatures">توقيع المستلم: __________________ &nbsp; توقيع المسؤول: __________________</p></div><footer class="modal-footer">${d.kind === "inspection" ? inspectionActions(id) : ""}${button(`${icon("print")} طباعة`, "print", d.kind === "inspection" ? "secondary" : "primary")}${d.status === "draft" && allowed(m, true) ? button("ترحيل المستند", "post-doc", "secondary", `data-id="${id}"`) : ""}${d.status === "posted" && ["inspection", "purchase_order", "sale", "purchase"].includes(d.kind) && allowed(m, true) ? button(["sale", "purchase"].includes(d.kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة", "convert-doc", "secondary", `data-id="${id}"`) : ""}${["sale", "purchase", "sale_return", "purchase_return"].includes(d.kind) && d.status === "posted" && d.paid < d.total && allowed("accounting", true) ? button("تسجيل سداد", "pay-doc", "secondary", `data-id="${id}"`) : ""}</footer>`,
     true,
   );
 }
@@ -1126,7 +1185,6 @@ function settingsPage() {
   const s = state.boot.settings;
   return `${pageHeader("إعدادات مساحة العمل", "بيانات الشركة وسياسات المبيعات والعمل والصلاحيات.")}<div class="settings-layout"><section class="panel settings-panel"><header class="panel-header"><div><h2>بيانات الشركة والتفضيلات</h2><p>تظهر بيانات شركتك على الفواتير المطبوعة</p></div>${icon("building")}</header><form id="settings-form"><div class="form-grid">${[
     { key: "company_name", label: "اسم الشركة", required: true },
-    { key: "currency", label: "رمز العملة", required: true },
     { key: "company_address", label: "عنوان الشركة" },
     { key: "company_phone", label: "هاتف الشركة" },
     { key: "tax_number", label: "الرقم الضريبي" },
@@ -1139,7 +1197,7 @@ function settingsPage() {
       type: "number",
     },
   ]
-    .map((f) => inputField(f, s[f.key]))
+    .map((f) => inputField(f, s[f.key]) + (f.key === "company_name" ? currencyField() : ""))
     .join(
       "",
     )}</div><div class="form-error"></div><button class="btn primary" type="submit">${icon("check")} حفظ الإعدادات</button></form></section><aside><section class="panel settings-links"><h3>التحكم والوصول</h3><a href="#/users">${icon("users")} المستخدمون والصلاحيات ${icon("arrow")}</a><a href="#/audit">${icon("shield")} سجل النشاط ${icon("arrow")}</a><button data-action="profile">${icon("settings")} تغيير كلمة المرور ${icon("arrow")}</button></section><section class="panel backup-card"><span class="icon-tile green">${icon("download")}</span><h3>نسخة من بياناتك، دائمًا</h3><p>نزّل نسخة متسقة من قاعدة البيانات، واحتفظ بها في مكان آمن. تحتوي النسخة على كل بيانات الشركة.</p>${button(`${icon("download")} تنزيل نسخة احتياطية`, "backup", "secondary block")}<small>${state.boot.serverless ? "على Vercel: تنزيل يدوي للنسخ الصغيرة. استخدم نسخ وتصدير Turso للبيانات الكبيرة؛ عامل النسخ المحلي لا يعمل على هذه الاستضافة." : "نسخ تلقائي كل 24 ساعة أثناء تشغيل الخادم، مع الاحتفاظ بآخر 14 نسخة تلقائية. احفظ نسخة خارج هذه البيئة."}</small></section></aside></div>`;
@@ -1304,7 +1362,7 @@ document.addEventListener("click", async (event) => {
     if (action === "language") {
       const form = $("#auth-form");
       const authValues = form ? formData(form) : null;
-      const hasEdits = !form && ($("#modal-root form") || $("#settings-form[data-dirty=true]"));
+      const hasEdits = !form && ($("#modal-root form") || $("#settings-form[data-dirty=true], #currency-form[data-dirty=true]"));
       if (hasEdits && !window.confirm(t("سيتم إغلاق النموذج وفقد التعديلات غير المحفوظة. هل تريد تغيير اللغة؟"))) return;
       window.I18n.setLanguage(window.I18n.language === "ar" ? "en" : "ar");
       closeModal();
@@ -1349,6 +1407,8 @@ document.addEventListener("click", async (event) => {
       state.documentLines.splice(Number(el.dataset.index), 1);
       return renderDocLines();
     }
+    if (action === "quotation-pdf") return await download(`documents/${id}/pdf?lang=${window.I18n.language}`);
+    if (action === "quotation-whatsapp") return await shareQuotation(id, el);
     if (action === "view-doc") return await viewDocument(id);
     if (action === "post-doc")
       return confirmAction(
@@ -1394,7 +1454,7 @@ document.addEventListener("click", async (event) => {
       const d = await api(`journal/${id}`);
       return modal(
         `قيد #${id}`,
-        `<div class="modal-body printable" id="print-content"><h3>${esc(journalDescription(d.journal))}</h3><p>${esc(d.journal.date)}</p>${table(d.lines, ["code", "name", "party", "debit", "credit"])}</div><footer class="modal-footer">${button(`${icon("print")} طباعة`, "print", "primary")}</footer>`,
+        `<div class="modal-body printable" id="print-content"><h3>${esc(journalDescription(d.journal))}</h3><p>${esc(d.journal.date)}</p>${table(d.lines, ["code", "name", "party", "debit", "credit"])}</div><footer class="modal-footer">${d.kind === "inspection" ? inspectionActions(id) : ""}${button(`${icon("print")} طباعة`, "print", d.kind === "inspection" ? "secondary" : "primary")}</footer>`,
         true,
       );
     }
@@ -1573,10 +1633,17 @@ document.addEventListener("submit", async (event) => {
         method: form.dataset.id ? "PUT" : "POST",
         body: data,
       });
+    } else if (form.id === "currency-form") {
+      await api("settings", { method: "PUT", body: { currency: data.currency } });
+      await refreshBoot();
+      await renderPage();
+      toast("تم حفظ العملة الأساسية");
+      return;
     } else if (form.id === "settings-form") {
       await api("settings", { method: "PUT", body: data });
       await refreshBoot();
       delete form.dataset.dirty;
+      await renderPage();
       toast("تم حفظ إعدادات الشركة");
       return;
     } else if (form.id === "password-form") {
@@ -1606,7 +1673,7 @@ document.addEventListener("submit", async (event) => {
 });
 document.addEventListener("input", (event) => {
   const el = event.target;
-  if (el.closest("#settings-form")) el.closest("form").dataset.dirty = "true";
+  if (el.closest("#settings-form, #currency-form")) el.closest("form").dataset.dirty = "true";
   if (["table-search", "global-search"].includes(el.id)) {
     state.search = el.value;
     filterTable(el.value);

@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('ERP_DATA_DIR', '/tmp/erp' if os.environ.get('VERCEL') else ROOT / '.local')).resolve()
 DB_PATH = DATA / 'erp.sqlite3'
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class BusinessError(Exception):
@@ -109,6 +109,8 @@ CREATE TABLE IF NOT EXISTS loans (id INTEGER PRIMARY KEY, employee_id INTEGER NO
 CREATE TABLE IF NOT EXISTS depreciation (id INTEGER PRIMARY KEY, asset_id INTEGER NOT NULL REFERENCES assets(id), month TEXT NOT NULL, amount INTEGER NOT NULL, UNIQUE(asset_id,month));
 CREATE TABLE IF NOT EXISTS employee_files (id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id), name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, content BLOB NOT NULL, uploaded_by INTEGER NOT NULL REFERENCES users(id), created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS auth_attempts (key TEXT PRIMARY KEY, attempts INTEGER NOT NULL, started_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS document_shares (id INTEGER PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE, pdf BLOB NOT NULL, language TEXT NOT NULL, currency TEXT NOT NULL, expires_at INTEGER NOT NULL, created_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS share_expiry ON document_shares(expires_at);
 CREATE INDEX IF NOT EXISTS doc_kind_date ON documents(kind,date);
 CREATE INDEX IF NOT EXISTS move_lookup ON stock_moves(warehouse_id,product_id,date);
 CREATE INDEX IF NOT EXISTS journal_account ON journal_lines(account_id);
@@ -195,7 +197,7 @@ def _initialize_schema(db):
         parent_id = db.execute('SELECT id FROM accounts WHERE code=?', (parent,)).fetchone() if parent else None
         db.execute('INSERT INTO accounts(code,name,type,parent_id) SELECT ?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM accounts WHERE code=?)', (code,name,kind,parent_id[0] if parent_id else None,code))
     db.execute("UPDATE accounts SET type='أصول',parent_id=(SELECT id FROM accounts WHERE code='1000') WHERE code='2400' AND name='مجمع الإهلاك' AND type='التزامات'")
-    defaults = {'company_name': 'شركتي', 'currency': 'ج.م', 'tax_rate': 14, 'company_address': '', 'company_phone': '', 'tax_number': '', 'leave_days': 21, 'work_hours': 8, 'discount_limit': 100}
+    defaults = {'company_name': 'شركتي', 'currency': 'EGP', 'tax_rate': 14, 'company_address': '', 'company_phone': '', 'tax_number': '', 'leave_days': 21, 'work_hours': 8, 'discount_limit': 100}
     for key, value in defaults.items():
         db.execute('INSERT OR IGNORE INTO settings VALUES(?,?)', (key,json.dumps(value,ensure_ascii=False)))
     if not db.execute('SELECT 1 FROM branches LIMIT 1').fetchone():

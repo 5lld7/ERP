@@ -77,18 +77,18 @@
   if (typeof module !== "undefined" && module.exports) module.exports = { createTranslator };
   if (typeof document === "undefined") return;
   let language = "ar";
-  try { language = localStorage.getItem("madar-language") || "ar"; } catch (_) { /* Private storage can be disabled. */ }
+  try { language = localStorage.getItem("serviq-language") || localStorage.getItem("madar-language") || "ar"; } catch (_) { /* Private storage can be disabled. */ }
   const i18n = createTranslator({}, {
     language,
     onLanguageChange(value) {
-      try { localStorage.setItem("madar-language", value); } catch (_) { /* The selection still works for this session. */ }
+      try { localStorage.setItem("serviq-language", value); } catch (_) { /* The selection still works for this session. */ }
       document.documentElement.lang = value;
       document.documentElement.dir = value === "en" ? "ltr" : "rtl";
-      document.title = value === "en" ? "Madar | Business Management" : "مدار | نظام إدارة الأعمال";
+      document.title = value === "en" ? "Serviq | Business Management" : "Serviq | نظام إدارة الأعمال";
       const loading = document.querySelector(".initial-loading p");
       if (loading) loading.textContent = value === "en" ? "Preparing your workspace…" : "نجهّز مساحة عملك…";
       const mark = document.querySelector(".initial-loading .brand-mark");
-      if (mark) mark.textContent = value === "en" ? "M" : "م";
+      if (mark) mark.textContent = "S";
     },
   });
   global.I18n = i18n;

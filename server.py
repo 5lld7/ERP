@@ -19,6 +19,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, quote
 
 import erp
+import quotations
+from currencies import currency_metadata, validate_currency_change
 from localization import csv_headers, csv_row_values, request_language, translate_error
 
 LOG = logging.getLogger('erp')
@@ -49,13 +51,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length',str(len(body)))
         self.send_header('X-Content-Type-Options','nosniff')
         self.send_header('X-Frame-Options','DENY')
-        self.send_header('Referrer-Policy','same-origin')
+        self.send_header('Referrer-Policy',(headers or {}).get('Referrer-Policy','same-origin'))
         self.send_header('Cache-Control','no-store')
         self.send_header('Content-Language',language)
         self.send_header('Vary','Accept-Language')
         self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         for key,value in (headers or {}).items():
-            self.send_header(key,value)
+            if key.lower()!='referrer-policy':
+                self.send_header(key,value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -126,6 +129,13 @@ class Handler(BaseHTTPRequestHandler):
                     raise PermissionError('مصدر الطلب غير مسموح')
             db=erp.connect()
             params={k:v[0] for k,v in parse_qs(url.query).items()}
+            if path=='/api/quotations/shared':
+                if method!='GET':
+                    return self.respond({'error':'عملية غير مسموحة'},405)
+                pdf=quotations.shared_pdf(db,params.get('token'))
+                if pdf is None:
+                    return self.respond({'error':quotations.SHARE_UNAVAILABLE},404,headers={'Referrer-Policy':'no-referrer'})
+                return self.respond(pdf,headers={'Content-Disposition':'inline; filename="quotation.pdf"','Referrer-Policy':'no-referrer'},content_type='application/pdf')
             user,digest=self.session(db)
             if path=='/api/auth' and method=='GET':
                 return self.respond({'setup_required':not bool(db.execute('SELECT 1 FROM users LIMIT 1').fetchone()),'setup_token_required':bool(os.environ.get('ERP_SETUP_TOKEN')),'user':user})
@@ -181,7 +191,8 @@ class Handler(BaseHTTPRequestHandler):
                     cols='id,name,code' if name=='accounts' else 'id,name'
                     refs[name]=[dict(r) for r in db.execute(f'SELECT {cols} FROM {name} ORDER BY name')]
                 resources={name:spec for name,spec in erp.RESOURCES.items() if erp.can(user,spec['module'])}
-                return self.respond({'user':user,'settings':erp.settings(db),'resources':resources,'refs':refs,'kinds':{k:v for k,v in erp.KINDS.items() if erp.can(user,v[1])},'roles':erp.ROLES,'reports':{k:v for k,v in REPORT_MODULES.items() if erp.can(user,v)},'serverless':bool(os.environ.get('VERCEL'))})
+                company_settings=erp.settings(db)
+                return self.respond({'user':user,'settings':company_settings,'resources':resources,'refs':refs,'kinds':{k:v for k,v in erp.KINDS.items() if erp.can(user,v[1])},'roles':erp.ROLES,'reports':{k:v for k,v in REPORT_MODULES.items() if erp.can(user,v)},'serverless':bool(os.environ.get('VERCEL')),**currency_metadata(db,company_settings['currency'])})
             if path=='/api/dashboard' and method=='GET':
                 return self.respond(erp.dashboard(db,user))
             parts=path.strip('/').split('/')
@@ -282,10 +293,24 @@ class Handler(BaseHTTPRequestHandler):
                     did=erp.save_document(db,data,user)
                 return self.respond({'ok':True,'id':did})
             if len(parts)>=3 and parts[1]=='documents':
+                if len(parts)>4 or (len(parts)==4 and parts[3] not in ('pdf','share','post','progress')):
+                    return self.respond({'error':'المسار غير موجود'},404)
                 did=int(parts[2])
+                if len(parts)==4 and parts[3] in ('pdf','share'):
+                    erp.require(user,'sales',parts[3]=='share')
+                    language=params.get('lang',request_language(self.headers,self.path))
+                    if parts[3]=='pdf' and method=='GET':
+                        pdf,doc=quotations.render_document(db,did,language)
+                        filename='quotation-'+str(doc['number'])+'.pdf'
+                        return self.respond(pdf,headers={'Content-Disposition':"attachment; filename*=UTF-8''"+quote(filename,safe='')},content_type='application/pdf')
+                    if parts[3]=='share' and method=='POST':
+                        with erp.transaction(db):
+                            result=quotations.create_share(db,did,user,language)
+                        return self.respond(result)
+                    return self.respond({'error':'عملية غير مسموحة'},405)
                 doc=erp.document_detail(db,did)
                 erp.require(user,erp.KINDS[doc['kind']][1],method!='GET')
-                if method=='GET':
+                if method=='GET' and len(parts)==3:
                     if user['role']=='sales':
                         for line in doc['lines']:
                             line.pop('cost',None)
@@ -303,7 +328,7 @@ class Handler(BaseHTTPRequestHandler):
                         db.execute('UPDATE documents SET progress=? WHERE id=?',(progress,did))
                         erp.audit(db,user['id'],'تحديث حالة المعاينة','documents',did,progress)
                     return self.respond({'ok':True})
-                if method=='DELETE':
+                if method=='DELETE' and len(parts)==3:
                     if doc['status']!='draft':
                         raise erp.BusinessError('لا يمكن حذف مستند مرحّل. استخدم المرتجع أو قيد التصحيح')
                     with erp.transaction(db):
@@ -401,10 +426,13 @@ class Handler(BaseHTTPRequestHandler):
                 if method=='PUT':
                     data=self.json_body()
                     with erp.transaction(db):
-                        for key,old in erp.settings(db).items():
+                        current_settings=erp.settings(db)
+                        for key,old in current_settings.items():
                             if key not in data:
                                 continue
                             value=data[key]
+                            if key=='currency':
+                                value=validate_currency_change(db,old,value)
                             if isinstance(old,(int,float)):
                                 value=erp.number(value)
                                 max_value=100 if key in ('tax_rate','discount_limit') else 366 if key=='leave_days' else 24
