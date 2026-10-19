@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import erp
-from database import remote_settings
+from database import DatabaseUnavailable, remote_settings
 from server import Handler
 
 os.umask(0o077)
@@ -17,27 +17,60 @@ os.umask(0o077)
 _ready = False
 _lock = threading.Lock()
 
+STARTUP_ERRORS = {
+    'DATABASE_URL_MISSING': 'متغير ERP_DATABASE_URL غير موجود في هذا النشر. أضفه إلى Production ثم أعد النشر.',
+    'DATABASE_TOKEN_MISSING': 'متغير ERP_DATABASE_TOKEN غير موجود في هذا النشر. أضف توكن Turso ثم أعد النشر.',
+    'DATABASE_URL_INVALID': 'صيغة ERP_DATABASE_URL غير صحيحة. انسخ Database URL من Turso ثم أعد النشر.',
+    'COOKIE_SECURE': 'اجعل قيمة ERP_COOKIE_SECURE تساوي 1 ثم أعد النشر.',
+    'DATABASE_AUTH': 'Turso رفض توكن الاتصال. راجع ERP_DATABASE_TOKEN وصلاحيته لهذه القاعدة ثم أعد النشر.',
+    'DATABASE_PERMISSION': 'Turso رفض صلاحية العملية. تأكد أن توكن القاعدة يسمح بالقراءة والكتابة.',
+    'DATABASE_CONNECTION': 'تعذر الاتصال بقاعدة Turso. راجع رابط القاعدة وحالة الخدمة.',
+    'DATABASE_SCHEMA': 'تعذرت قراءة إصدار قاعدة البيانات.',
+    'DATABASE_INITIALIZE': 'تعذر إنشاء جداول النظام في Turso. تحقق من صلاحية القراءة والكتابة.',
+    'DATABASE_VERSION': 'إصدار قاعدة البيانات أحدث من إصدار التطبيق المنشور.',
+}
+
 
 def ensure_ready():
     global _ready
     if os.environ.get('VERCEL'):
         # /tmp is never a replacement for durable company data.
-        if not remote_settings():
-            raise sqlite3.OperationalError('Configure ERP_DATABASE_URL and ERP_DATABASE_TOKEN in Vercel')
+        if not os.environ.get('ERP_DATABASE_URL', '').strip():
+            raise DatabaseUnavailable('DATABASE_URL_MISSING')
+        if not os.environ.get('ERP_DATABASE_TOKEN', '').strip():
+            raise DatabaseUnavailable('DATABASE_TOKEN_MISSING')
+        try:
+            remote_settings()
+        except (sqlite3.Error, ValueError):
+            raise DatabaseUnavailable('DATABASE_URL_INVALID') from None
         if os.environ.get('ERP_COOKIE_SECURE') != '1':
-            raise sqlite3.OperationalError('Set ERP_COOKIE_SECURE=1 in Vercel')
+            raise DatabaseUnavailable('COOKIE_SECURE')
     if not _ready:
         with _lock:
             if not _ready:
-                db = erp.connect()
+                try:
+                    db = erp.connect()
+                except DatabaseUnavailable:
+                    raise
+                except sqlite3.Error:
+                    raise DatabaseUnavailable('DATABASE_CONNECTION') from None
                 try:
                     version = db.execute('PRAGMA user_version').fetchone()[0]
+                except DatabaseUnavailable:
+                    raise
+                except sqlite3.Error:
+                    raise DatabaseUnavailable('DATABASE_SCHEMA') from None
                 finally:
                     db.close()
                 if version > erp.SCHEMA_VERSION:
-                    raise sqlite3.OperationalError('Database schema is newer than this application')
+                    raise DatabaseUnavailable('DATABASE_VERSION')
                 if version != erp.SCHEMA_VERSION:
-                    erp.initialize()
+                    try:
+                        erp.initialize()
+                    except DatabaseUnavailable:
+                        raise
+                    except sqlite3.Error:
+                        raise DatabaseUnavailable('DATABASE_INITIALIZE') from None
                 _ready = True
 
 
@@ -51,6 +84,9 @@ class handler(Handler):
                                     urlencode(params, doseq=True), ''))
         try:
             ensure_ready()
+        except DatabaseUnavailable as exc:
+            code = exc.code if exc.code in STARTUP_ERRORS else 'DATABASE_CONNECTION'
+            return self.respond({'error': STARTUP_ERRORS[code] + ' [' + code + ']', 'code': code}, 503)
         except sqlite3.Error:
             return self.respond({'error': 'إعداد قاعدة البيانات الدائمة غير مكتمل أو الاتصال غير متاح. راجع متغيرات Vercel.'}, 503)
         return super().dispatch_request(method)

@@ -17,7 +17,7 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import erp
 from api import index
-from database import Connection, remote_settings
+from database import Connection, DatabaseUnavailable, checked, remote_settings
 
 
 class RuntimeHandler(index.handler):
@@ -39,6 +39,22 @@ class RuntimeHandler(index.handler):
 
 
 class AdapterCase(unittest.TestCase):
+    def test_sdk_diagnostics_never_expose_connection_details(self):
+        for message, code in (
+            ('401 Unauthorized', 'DATABASE_AUTH'),
+            ('403 Forbidden', 'DATABASE_PERMISSION'),
+            ('connection refused', 'DATABASE_CONNECTION'),
+        ):
+            secret = secrets.token_urlsafe(32)
+            def fail():
+                raise ValueError(message + ' https://private-host/ ' + secret)
+            with self.subTest(code=code):
+                with self.assertRaises(DatabaseUnavailable) as caught:
+                    checked(fail)
+                self.assertEqual(caught.exception.code, code)
+                self.assertNotIn(secret, str(caught.exception))
+                self.assertNotIn('private-host', str(caught.exception))
+
     def test_settings_require_tls_and_no_embedded_credentials(self):
         for url in ('http://example.com','file:///tmp/unsafe','https://user:pass@example.com','libsql://db.turso.io?tls=0'):
             with self.subTest(url=url),patch.dict(os.environ,{'ERP_DATABASE_URL':url,'ERP_DATABASE_TOKEN':'test-value'}):
@@ -153,6 +169,34 @@ class VercelHandlerCase(unittest.TestCase):
             self.assertIn('; Secure',session['Set-Cookie'])
         finally:
             db.close()
+
+    def test_06_production_configuration_diagnostics(self):
+        valid = {'VERCEL':'1', 'ERP_DATABASE_URL':'libsql://example.turso.io',
+                 'ERP_DATABASE_TOKEN':secrets.token_urlsafe(32), 'ERP_COOKIE_SECURE':'1'}
+        for overrides, expected in (
+            ({'ERP_DATABASE_URL':''}, 'DATABASE_URL_MISSING'),
+            ({'ERP_DATABASE_TOKEN':''}, 'DATABASE_TOKEN_MISSING'),
+            ({'ERP_DATABASE_URL':'http://example.com'}, 'DATABASE_URL_INVALID'),
+            ({'ERP_COOKIE_SECURE':'true'}, 'COOKIE_SECURE'),
+        ):
+            with self.subTest(code=expected), patch.dict(os.environ, valid | overrides):
+                code, data, _ = self.request('/api/auth')
+                self.assertEqual(code, 503)
+                self.assertEqual(data['code'], expected)
+                self.assertNotIn(valid['ERP_DATABASE_TOKEN'], json.dumps(data))
+
+    def test_07_connection_failure_hides_raw_error(self):
+        secret = secrets.token_urlsafe(32)
+        old_ready = index._ready
+        index._ready = False
+        try:
+            with patch.object(erp, 'connect', side_effect=sqlite3.OperationalError(secret)):
+                code, data, _ = self.request('/api/auth')
+            self.assertEqual(code, 503)
+            self.assertEqual(data['code'], 'DATABASE_CONNECTION')
+            self.assertNotIn(secret, json.dumps(data))
+        finally:
+            index._ready = old_ready
 
 
 if __name__=='__main__':

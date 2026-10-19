@@ -8,6 +8,13 @@ import sqlite3
 from urllib.parse import urlsplit
 
 
+class DatabaseUnavailable(sqlite3.OperationalError):
+    """A fixed diagnostic code; never retain SDK error text or credentials."""
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
 class Record(dict):
     def __getitem__(self, key):
         if isinstance(key, (int, slice)):
@@ -20,12 +27,17 @@ def checked(operation, *args, **kwargs):
         return operation(*args, **kwargs)
     except ValueError as exc:
         # SDK errors can contain connection details; never return or log them.
-        if any(marker in str(exc).lower() for marker in (
+        message = str(exc).lower()
+        if any(marker in message for marker in (
             'unique constraint', 'foreign key constraint', 'check constraint',
             'not null constraint', 'constraint failed',
         )):
             raise sqlite3.IntegrityError('Database constraint failed') from None
-        raise sqlite3.OperationalError('Database operation failed') from None
+        if any(marker in message for marker in ('401', 'unauthorized', 'unauthenticated', 'invalid token', 'token expired', 'jwt expired', 'jwt_invalid', 'jwt_expired', 'authentication failed')):
+            raise DatabaseUnavailable('DATABASE_AUTH') from None
+        if any(marker in message for marker in ('403', 'forbidden', 'read-only', 'readonly')):
+            raise DatabaseUnavailable('DATABASE_PERMISSION') from None
+        raise DatabaseUnavailable('DATABASE_CONNECTION') from None
 
 
 class Cursor:
