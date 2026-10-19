@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, quote
 
 import erp
+from localization import csv_headers, csv_row_values, request_language, translate_error
 
 LOG = logging.getLogger('erp')
 STATIC = erp.ROOT / 'static'
@@ -39,6 +40,9 @@ class Handler(BaseHTTPRequestHandler):
         LOG.info('%s %s',self.command,urlsplit(self.path).path)
 
     def respond(self,data,status=200,headers=None,content_type='application/json; charset=utf-8'):
+        language=request_language(self.headers,self.path)
+        if isinstance(data,dict) and isinstance(data.get('error'),str):
+            data={**data,'error':translate_error(data['error'],language)}
         body=json.dumps(data,ensure_ascii=False,allow_nan=False).encode() if isinstance(data,(dict,list)) else data
         self.send_response(status)
         self.send_header('Content-Type',content_type)
@@ -47,6 +51,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Frame-Options','DENY')
         self.send_header('Referrer-Policy','same-origin')
         self.send_header('Cache-Control','no-store')
+        self.send_header('Content-Language',language)
+        self.send_header('Vary','Accept-Language')
         self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         for key,value in (headers or {}).items():
             self.send_header(key,value)
@@ -106,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
             if not path.startswith('/api/'):
                 if method!='GET':
                     return self.respond({'error':'غير مسموح'},405)
-                files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8'),'/favicon.svg':('favicon.svg','image/svg+xml')}
+                files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/i18n.js':('i18n.js','text/javascript; charset=utf-8'),'/locales/en-ui.json':('locales/en-ui.json','application/json; charset=utf-8'),'/locales/en-data.json':('locales/en-data.json','application/json; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8'),'/favicon.svg':('favicon.svg','image/svg+xml')}
                 if path not in files:
                     return self.respond({'error':'الصفحة غير موجودة'},404)
                 file,mime=files[path]
@@ -172,7 +178,7 @@ class Handler(BaseHTTPRequestHandler):
                 # employee files, supplier costs, or financial account balances.
                 refs={}
                 for name in RESOURCES_FOR_REFS:
-                    cols='id,name'
+                    cols='id,name,code' if name=='accounts' else 'id,name'
                     refs[name]=[dict(r) for r in db.execute(f'SELECT {cols} FROM {name} ORDER BY name')]
                 resources={name:spec for name,spec in erp.RESOURCES.items() if erp.can(user,spec['module'])}
                 return self.respond({'user':user,'settings':erp.settings(db),'resources':resources,'refs':refs,'kinds':{k:v for k,v in erp.KINDS.items() if erp.can(user,v[1])},'roles':erp.ROLES,'reports':{k:v for k,v in REPORT_MODULES.items() if erp.can(user,v)},'serverless':bool(os.environ.get('VERCEL'))})
@@ -378,11 +384,14 @@ class Handler(BaseHTTPRequestHandler):
                 rows=erp.report(db,name,params)
                 if params.get('format')=='csv':
                     out=io.StringIO(newline='')
-                    writer=csv.DictWriter(out,fieldnames=list(rows[0]) if rows else ['message'])
-                    writer.writeheader()
-                    for row in rows:
+                    keys=list(rows[0]) if rows else ['message']
+                    writer=csv.writer(out)
+                    language=request_language(self.headers,self.path)
+                    writer.writerow(csv_headers(name,keys,language))
+                    for index,row in enumerate(rows):
                         # Spreadsheet formula injection protection.
-                        writer.writerow({k:("'"+v if isinstance(v,str) and v.startswith(('=','+','-','@','\t','\r')) else v) for k,v in row.items()})
+                        values=csv_row_values(name,row,language,index)
+                        writer.writerow([("'"+v if isinstance(v,str) and v.startswith(('=','+','-','@','\t','\r')) else v) for v in values])
                     return self.respond(('\ufeff'+out.getvalue()).encode(),headers={'Content-Disposition':f'attachment; filename="{name}.csv"'},content_type='text/csv; charset=utf-8')
                 return self.respond(rows)
             if path=='/api/settings':

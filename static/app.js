@@ -2,16 +2,18 @@
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-const esc = (value) =>
-  String(value ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ],
-  );
+const esc = (value) => window.I18n.escape(value);
+const t = (text) => window.I18n.t(text);
+function setHTML(element, markup) {
+  element.innerHTML = window.I18n.html(markup);
+}
+function languageButton(extraClass = "") {
+  const next = window.I18n.language === "ar" ? "English" : "العربية";
+  const description = window.I18n.language === "ar" ? "Switch to English" : "Switch to Arabic";
+  return `<button type="button" class="btn secondary language-toggle ${extraClass}" data-action="language" lang="${window.I18n.language === "ar" ? "en" : "ar"}" dir="auto" aria-label="${description}">${next}</button>`;
+}
 const numeric = (value) =>
-  new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(
+  new Intl.NumberFormat(window.I18n.locale, { maximumFractionDigits: 2, numberingSystem: "latn" }).format(
     Number(value || 0),
   );
 const dateNow = () => {
@@ -75,7 +77,7 @@ function icon(name, cls = "") {
   return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.file}</svg>`;
 }
 const money = (n) =>
-  `${numeric(n)} <small>${esc(state.boot?.settings.currency || "ج.م")}</small>`;
+  `${numeric(n)} <small>${esc((state.boot?.settings.currency || "ج.م") === "ج.م" ? t("ج.م") : state.boot.settings.currency)}</small>`;
 const modules = {
   accounting: {
     name: "الحسابات المالية",
@@ -216,6 +218,8 @@ const labels = {
   users: "المستخدمون والصلاحيات",
   audit: "سجل النشاط",
   dashboard: "نظرة عامة",
+  documents: "المستندات",
+  files: "الملفات والعقود",
 };
 const colNames = {
   id: "#",
@@ -338,6 +342,7 @@ async function api(path, opts = {}) {
     headers: {
       "Content-Type": "application/json",
       "X-ERP-Request": "1",
+      "Accept-Language": window.I18n.language,
       ...(opts.headers || {}),
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -353,14 +358,20 @@ async function api(path, opts = {}) {
       state.boot = null;
       renderAuth(false);
     }
-    throw new Error(data.error || "تعذّر تنفيذ الطلب");
+    const error = new Error(data.error || t("تعذّر تنفيذ الطلب"));
+    error.localized = Boolean(data.error);
+    throw error;
   }
   return data;
+}
+function errorText(error) {
+  // Backend errors are already localized and may contain a customer's exact name.
+  return error.localized ? error.message : t(error.message);
 }
 function toast(message, error = false) {
   const el = document.createElement("div");
   el.className = `toast ${error ? "error" : ""}`;
-  el.innerHTML = `${icon(error ? "info" : "check")}<span>${esc(message)}</span>`;
+  setHTML(el, `${icon(error ? "info" : "check")}<span>${esc(error ? message : t(message))}</span>`);
   $("#toasts").append(el);
   setTimeout(() => el.remove(), 5500);
 }
@@ -380,17 +391,17 @@ function badge(value) {
     إجازة: ["إجازة", "purple"],
   };
   const [label, color] = status[value] || [value, "gray"];
-  return `<span class="badge ${color}"><i></i>${esc(label)}</span>`;
+  return `<span class="badge ${color}"><i></i>${esc(t(label))}</span>`;
 }
 function empty(
   message = "لا توجد سجلات بعد",
   detail = "ابدأ بإضافة أول سجل، وستظهر بياناتك هنا.",
+  detailIsLocalized = false,
 ) {
-  return `<div class="empty">${icon("file")}<h3>${esc(message)}</h3><p>${esc(detail)}</p></div>`;
+  return `<div class="empty">${icon("file")}<h3>${esc(t(message))}</h3><p>${esc(detailIsLocalized ? detail : t(detail))}</p></div>`;
 }
 function modal(title, content, wide = false) {
-  $("#modal-root").innerHTML =
-    `<div class="modal-backdrop"><section class="modal ${wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><div><span class="eyebrow">مدار / مساحة العمل</span><h2 id="modal-title">${esc(title)}</h2></div>${button(icon("close"), "close", "icon-button", 'aria-label="إغلاق"')}</header>${content}</section></div>`;
+  setHTML($("#modal-root"), `<div class="modal-backdrop"><section class="modal ${wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><header class="modal-header"><div><span class="eyebrow">مدار / مساحة العمل</span><h2 id="modal-title">${esc(t(title))}</h2></div>${button(icon("close"), "close", "icon-button", 'aria-label="إغلاق"')}</header>${content}</section></div>`);
   $(".modal").focus();
   setTimeout(
     () => $(".modal input:not([type=hidden]), .modal select")?.focus(),
@@ -400,7 +411,7 @@ function modal(title, content, wide = false) {
 }
 function closeModal() {
   if ($("#modal-root").innerHTML) {
-    $("#modal-root").innerHTML = "";
+    setHTML($("#modal-root"), "");
     document.body.classList.remove("has-modal");
   }
 }
@@ -416,22 +427,22 @@ function inputField(f, value) {
       f.type === "ref"
         ? (state.boot.refs[f.ref] || []).map((o) => ({
             value: o.id,
-            label: o.name,
+            label: f.ref === "accounts" ? accountLabel(o.name, o) : o.name,
           }))
         : f.options.map((o) => ({
             value: typeof o === "object" ? o.value : o,
             label: typeof o === "object" ? o.label : o,
           }));
-    input = `<select name="${key}" ${required}><option value="">اختر ${esc(f.label)}</option>${options.map((o) => `<option value="${esc(o.value)}" ${String(value ?? "") === String(o.value) ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select>`;
+    input = `<select name="${key}" ${required}><option value="">اختر ${esc(t(f.label))}</option>${options.map((o) => `<option value="${esc(o.value)}" ${String(value ?? "") === String(o.value) ? "selected" : ""}>${esc(f.type === "select" && f.translateOptions !== false ? t(o.label) : o.label)}</option>`).join("")}</select>`;
   } else if (f.type === "textarea")
     input = `<textarea name="${key}" ${required} rows="3">${esc(value ?? "")}</textarea>`;
   else {
     const type = ["money", "number"].includes(f.type)
       ? "number"
       : f.type || "text";
-    input = `<input name="${key}" type="${type}" value="${esc(value ?? "")}" ${required} ${["money", "number"].includes(f.type) ? 'min="0" step="' + (f.type === "money" ? "0.01" : "0.001") + '"' : ""} ${f.type === "password" ? 'minlength="10" autocomplete="new-password"' : ""} ${key === "username" ? 'autocomplete="username" dir="ltr"' : ""} placeholder="${esc(f.placeholder || f.label)}">`;
+    input = `<input name="${key}" type="${type}" value="${esc(value ?? "")}" ${required} ${["money", "number"].includes(f.type) ? 'min="0" step="' + (f.type === "money" ? "0.01" : "0.001") + '"' : ""} ${f.type === "password" ? 'minlength="10" autocomplete="new-password"' : ""} ${key === "username" ? 'autocomplete="username" dir="ltr"' : ""} placeholder="${esc(t(f.placeholder || f.label))}">`;
   }
-  return `<label class="field ${f.type === "textarea" ? "full" : ""}"><span>${esc(f.label)} ${f.required ? "<b>*</b>" : ""}</span>${input}</label>`;
+  return `<label class="field ${f.type === "textarea" ? "full" : ""}"><span>${esc(t(f.label))} ${f.required ? "<b>*</b>" : ""}</span>${input}</label>`;
 }
 function formData(form) {
   return Object.fromEntries(new FormData(form));
@@ -443,8 +454,8 @@ async function refreshBoot() {
   state.boot = await api("bootstrap");
 }
 function renderAuth(setup, setupTokenRequired = false) {
-  $("#app").innerHTML =
-    `<main class="auth-layout"><section class="auth-story"><a class="brand"><span class="brand-mark">${icon("chart")}</span><span>مدار<small>نظام إدارة الأعمال</small></span></a><div><span class="pill light">مساحة واحدة. أعمال مترابطة.</span><h1>كل تفاصيل شغلك،<br><em>في مدار واحد.</em></h1><p>الحسابات والمخزون والمبيعات وفريق العمل.<br>نظام عربي يجمع الصورة كاملة.</p><div class="auth-orbit"><div class="orbit-center">${icon("grid")}</div><span>${icon("wallet")} الحسابات</span><span>${icon("box")} المخازن</span><span>${icon("chart")} المبيعات</span><span>${icon("users")} الموظفون</span></div></div><small>مصمم لتفاصيل يومك، وقابل للنمو مع أعمالك.</small></section><section class="auth-panel"><div class="auth-card"><span class="eyebrow">أهلًا بك في مدار</span><h2>${setup ? "لنبدأ حكاية شركتك" : "سعداء برجوعك"}</h2><p>${setup ? "أنشئ حساب المسؤول الأول. بيانات شركتك تبدأ من هنا." : "سجّل دخولك وتابع أعمالك من مكان واحد."}</p><form id="auth-form" data-setup="${setup}"><div class="form-grid one">${setup ? inputField({ key: "company_name", label: "اسم الشركة", required: true }) + inputField({ key: "name", label: "اسم المسؤول", required: true }) : ""}${setup && setupTokenRequired ? inputField({ key: "setup_token", label: "رمز إعداد المدير الأول", type: "password", required: true }) : ""}${inputField({ key: "username", label: "اسم المستخدم", required: true })}${inputField({ key: "password", label: "كلمة المرور", type: "password", required: true })}</div><p class="form-error" role="alert"></p><button class="btn primary block" type="submit">${setup ? "إنشاء مساحة العمل" : "تسجيل الدخول"} ${icon("arrow")}</button></form><div class="auth-security">${icon("shield")} ${setup ? "اختر كلمة مرور من 10 أحرف على الأقل؛ لا توجد كلمة مرور افتراضية." : "بياناتك محفوظة في قاعدة بيانات مساحة عملك."}</div></div><small class="auth-bottom">مدار ERP · إدارة أبسط، قرارات أوضح</small></section></main>`;
+  state.auth = { setup, setupTokenRequired };
+  setHTML($("#app"), `<main class="auth-layout"><section class="auth-story"><a class="brand"><span class="brand-mark">${icon("chart")}</span><span>مدار<small>نظام إدارة الأعمال</small></span></a><div><span class="pill light">مساحة واحدة. أعمال مترابطة.</span><h1>كل تفاصيل شغلك،<br><em>في مدار واحد.</em></h1><p>الحسابات والمخزون والمبيعات وفريق العمل.<br>نظام عربي يجمع الصورة كاملة.</p><div class="auth-orbit"><div class="orbit-center">${icon("grid")}</div><span>${icon("wallet")} الحسابات</span><span>${icon("box")} المخازن</span><span>${icon("chart")} المبيعات</span><span>${icon("users")} الموظفون</span></div></div><small>مصمم لتفاصيل يومك، وقابل للنمو مع أعمالك.</small></section><section class="auth-panel">${languageButton("auth-language")}<div class="auth-card"><span class="eyebrow">أهلًا بك في مدار</span><h2>${setup ? "لنبدأ حكاية شركتك" : "سعداء برجوعك"}</h2><p>${setup ? "أنشئ حساب المسؤول الأول. بيانات شركتك تبدأ من هنا." : "سجّل دخولك وتابع أعمالك من مكان واحد."}</p><form id="auth-form" data-setup="${setup}"><div class="form-grid one">${setup ? inputField({ key: "company_name", label: "اسم الشركة", required: true }) + inputField({ key: "name", label: "اسم المسؤول", required: true }) : ""}${setup && setupTokenRequired ? inputField({ key: "setup_token", label: "رمز إعداد المدير الأول", type: "password", required: true }) : ""}${inputField({ key: "username", label: "اسم المستخدم", required: true })}${inputField({ key: "password", label: "كلمة المرور", type: "password", required: true })}</div><p class="form-error" role="alert"></p><button class="btn primary block" type="submit">${setup ? "إنشاء مساحة العمل" : "تسجيل الدخول"} ${icon("arrow")}</button></form><div class="auth-security">${icon("shield")} ${setup ? "اختر كلمة مرور من 10 أحرف على الأقل؛ لا توجد كلمة مرور افتراضية." : "بياناتك محفوظة في قاعدة بيانات مساحة عملك."}</div></div><small class="auth-bottom">مدار ERP · إدارة أبسط، قرارات أوضح</small></section></main>`);
 }
 function moduleOf(page) {
   for (const [key, m] of Object.entries(modules))
@@ -455,8 +466,7 @@ function shell() {
   const page = state.page,
     module = moduleOf(page),
     u = state.boot.user;
-  $("#app").innerHTML =
-    `<div class="app-shell"><aside class="sidebar"><a href="#/dashboard" class="brand"><span class="brand-mark">${icon("chart")}</span><span>مدار<small>نظام إدارة الأعمال</small></span></a><div class="workspace-label">مساحة العمل</div><a class="nav-item ${page === "dashboard" ? "active" : ""}" href="#/dashboard">${icon("grid")}<span>نظرة عامة</span></a><div class="nav-caption">إدارة أعمالك</div><nav>${Object.entries(
+  setHTML($("#app"), `<div class="app-shell"><aside class="sidebar"><a href="#/dashboard" class="brand"><span class="brand-mark">${icon("chart")}</span><span>مدار<small>نظام إدارة الأعمال</small></span></a><div class="workspace-label">مساحة العمل</div><a class="nav-item ${page === "dashboard" ? "active" : ""}" href="#/dashboard">${icon("grid")}<span>نظرة عامة</span></a><div class="nav-caption">إدارة أعمالك</div><nav>${Object.entries(
       modules,
     )
       .filter(([key]) => allowed(key))
@@ -469,7 +479,7 @@ function shell() {
                   .filter(canPage)
                   .map(
                     (p) =>
-                      `<a href="#/${p}" class="${page === p ? "selected" : ""}">${esc(title(p))}</a>`,
+                      `<a href="#/${p}" class="${page === p ? "selected" : ""}">${esc(t(title(p)))}</a>`,
                   )
                   .join("")}</div>`
               : ""
@@ -477,10 +487,10 @@ function shell() {
       )
       .join(
         "",
-      )}<a class="nav-item ${page === "reports" ? "active" : ""}" href="#/reports">${icon("file")}<span>التقارير والتحليلات</span></a></nav><div class="sidebar-bottom"><div class="sync-card"><span class="sync-dot"></span><div>بيانات مترابطة<small>كل الأقسام في قاعدة بيانات واحدة</small></div>${icon("shield")}</div>${u.role === "admin" ? `<a class="nav-item ${page === "settings" ? "active" : ""}" href="#/settings">${icon("settings")}<span>إعدادات النظام</span></a>` : ""}<button class="user-card" data-action="profile"><span class="avatar">${esc(u.name.slice(0, 1))}</span><span>${esc(u.name)}<small>${esc(state.boot.roles[u.role])}</small></span>${icon("chevron")}</button></div></aside><div class="mobile-shade" data-action="menu"></div><div class="main-wrap"><header class="topbar">${button(icon("menu"), "menu", "icon-button menu-toggle", 'aria-label="فتح القائمة"')}<div class="breadcrumbs">مساحة العمل ${icon("chevron")} <strong>${esc(title(page))}</strong></div><div class="topbar-tools"><div class="search-wrap">${icon("search")}<input type="search" id="global-search" placeholder="ابحث في الصفحة الحالية…" aria-label="ابحث في الصفحة الحالية" value="${esc(state.search)}"><kbd>/</kbd></div><button class="icon-button notification" data-action="notifications" aria-label="التنبيهات">${icon("bell")}<i></i></button><span class="topbar-divider"></span><span class="company-label">${icon("building")}${esc(state.boot.settings.company_name)}</span></div></header><main id="main" class="main-content"><div class="loading">جارٍ تحميل البيانات…</div></main><footer class="page-footer"><span>مدار <b>ERP</b> <i>•</i> كل تفاصيل أعمالك، مترابطة.</span><span><i class="live-dot"></i> متصل بقاعدة البيانات</span></footer></div></div>`;
+      )}<a class="nav-item ${page === "reports" ? "active" : ""}" href="#/reports">${icon("file")}<span>التقارير والتحليلات</span></a></nav><div class="sidebar-bottom"><div class="sync-card"><span class="sync-dot"></span><div>بيانات مترابطة<small>كل الأقسام في قاعدة بيانات واحدة</small></div>${icon("shield")}</div>${u.role === "admin" ? `<a class="nav-item ${page === "settings" ? "active" : ""}" href="#/settings">${icon("settings")}<span>إعدادات النظام</span></a>` : ""}<button class="user-card" data-action="profile"><span class="avatar">${esc(u.name.slice(0, 1))}</span><span>${esc(u.name)}<small>${esc(t(state.boot.roles[u.role]))}</small></span>${icon("chevron")}</button></div></aside><div class="mobile-shade" data-action="menu"></div><div class="main-wrap"><header class="topbar">${button(icon("menu"), "menu", "icon-button menu-toggle", 'aria-label="فتح القائمة"')}<div class="breadcrumbs">مساحة العمل ${icon("chevron")} <strong>${esc(t(title(page)))}</strong></div><div class="topbar-tools">${languageButton()}<div class="search-wrap">${icon("search")}<input type="search" id="global-search" placeholder="ابحث في الصفحة الحالية…" aria-label="ابحث في الصفحة الحالية" value="${esc(state.search)}"><kbd>/</kbd></div><button class="icon-button notification" data-action="notifications" aria-label="التنبيهات">${icon("bell")}<i></i></button><span class="topbar-divider"></span><span class="company-label">${icon("building")}${esc(state.boot.settings.company_name)}</span></div></header><main id="main" class="main-content"><div class="loading">جارٍ تحميل البيانات…</div></main><footer class="page-footer"><span>مدار <b>ERP</b> <i>•</i> كل تفاصيل أعمالك، مترابطة.</span><span><i class="live-dot"></i> متصل بقاعدة البيانات</span></footer></div></div>`);
 }
-function pageHeader(titleText, subtitle, actions = "") {
-  return `<div class="page-heading"><div><div class="eyebrow">${esc(state.boot.settings.company_name)} <span>/</span> مساحة العمل</div><h1>${esc(titleText)}</h1><p>${esc(subtitle)}</p></div><div class="heading-actions">${actions}</div></div>`;
+function pageHeader(titleText, subtitle, actions = "", titleIsHTML = false) {
+  return `<div class="page-heading"><div><div class="eyebrow">${esc(state.boot.settings.company_name)} <span>/</span> مساحة العمل</div><h1>${titleIsHTML ? titleText : esc(t(titleText))}</h1><p>${esc(t(subtitle))}</p></div><div class="heading-actions">${actions}</div></div>`;
 }
 async function renderPage() {
   if (!state.boot) return;
@@ -507,17 +517,17 @@ async function renderPage() {
     else if (state.page === "settings") html = settingsPage();
     else if (state.page === "pos") html = await posPage();
     else html = await specialPage(state.page);
-    if (id === state.requestId) $("#main").innerHTML = html;
+    if (id === state.requestId) setHTML($("#main"), html);
   } catch (error) {
     if (id === state.requestId && $("#main"))
-      $("#main").innerHTML = empty("تعذّر تحميل الصفحة", error.message);
-    toast(error.message, true);
+      setHTML($("#main"), empty("تعذّر تحميل الصفحة", errorText(error), true));
+    toast(errorText(error), true);
   }
 }
 async function dashboardPage() {
   const d = await api("dashboard");
   state.dashboard = d;
-  const date = new Intl.DateTimeFormat("ar-EG", {
+  const date = new Intl.DateTimeFormat(window.I18n.locale, {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -557,10 +567,10 @@ async function dashboardPage() {
   const path = coords
     .map((p, i) => `${i ? "L" : "M"} ${p[0]} ${p[1]}`)
     .join(" ");
-  const chart = `<svg class="sales-chart" viewBox="0 0 570 185" role="img" aria-label="مبيعات آخر ستة أشهر"><defs><linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2f927c" stop-opacity=".24"/><stop offset="100%" stop-color="#2f927c" stop-opacity="0"/></linearGradient></defs>${[36, 74, 112, 150].map((y) => `<path d="M25 ${y}H555" stroke="#e9eeec" stroke-dasharray="4 5"/>`).join("")}<path d="${path} L522 153 L42 153Z" fill="url(#chart-fill)"/><path d="${path}" fill="none" stroke="#27866e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${coords.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="#fff" stroke="#27866e" stroke-width="2"><title>${esc(d.chart[i].month)}: ${numeric(d.chart[i].value)}</title></circle><text x="${p[0]}" y="178" text-anchor="middle" fill="#86908c" font-size="10">${new Intl.DateTimeFormat("ar-EG", { month: "short" }).format(new Date(d.chart[i].month + "-15"))}</text>`).join("")}</svg>`;
-  return `${pageHeader(`أهلًا، ${state.boot.user.name.split(" ")[0]} 👋`, "إليك نظرة شاملة على أعمالك اليوم.", `<span class="date-chip">${icon("calendar")}${esc(date)}</span>${allowed("sales", true) ? button(`${icon("plus")} فاتورة جديدة`, "new-doc", "primary", 'data-kind="sale"') : ""}`)}
+  const chart = `<svg class="sales-chart" viewBox="0 0 570 185" role="img" aria-label="مبيعات آخر ستة أشهر"><defs><linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2f927c" stop-opacity=".24"/><stop offset="100%" stop-color="#2f927c" stop-opacity="0"/></linearGradient></defs>${[36, 74, 112, 150].map((y) => `<path d="M25 ${y}H555" stroke="#e9eeec" stroke-dasharray="4 5"/>`).join("")}<path d="${path} L522 153 L42 153Z" fill="url(#chart-fill)"/><path d="${path}" fill="none" stroke="#27866e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${coords.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="#fff" stroke="#27866e" stroke-width="2"><title>${esc(d.chart[i].month)}: ${numeric(d.chart[i].value)}</title></circle><text x="${p[0]}" y="178" text-anchor="middle" fill="#86908c" font-size="10">${new Intl.DateTimeFormat(window.I18n.locale, { month: "short" }).format(new Date(d.chart[i].month + "-15"))}</text>`).join("")}</svg>`;
+  return `${pageHeader(`${esc(t("أهلًا،"))} ${esc(state.boot.user.name.split(" ")[0])} 👋`, "إليك نظرة شاملة على أعمالك اليوم.", `<span class="date-chip">${icon("calendar")}${esc(date)}</span>${allowed("sales", true) ? button(`${icon("plus")} فاتورة جديدة`, "new-doc", "primary", 'data-kind="sale"') : ""}`, true)}
  <section class="welcome-banner"><div><span class="pill light"><i class="live-dot"></i> أعمالك على المسار الصحيح</span><h2>صورة أوضح.<br>قرارات <em>أذكى.</em></h2><p>كل أقسام شركتك تعمل معًا. تابع الأداء،<br>واكتشف ما يحتاج انتباهك، من مكان واحد.</p><a class="hero-link" href="#/reports">استكشف تقارير أعمالك ${icon("arrow")}</a></div><div class="hero-art" aria-hidden="true"><div class="hero-rings"></div><div class="float-card inventory-float">${icon("box")}<span>المخزون<small>تحديث مع كل حركة</small></span><i class="mini-dot"></i></div><div class="hero-core">${icon("grid")}<span>مدار</span><small>كل شيء متصل</small></div><div class="float-card finance-float">${icon("wallet")}<span>الحسابات<small>قيود مترابطة</small></span>${icon("check")}</div><div class="float-mini">${icon("users")}</div><div class="hero-cross cross-one">+</div><div class="hero-cross cross-two">+</div></div><span class="banner-tag">YOUR BUSINESS, CONNECTED</span></section>
- <section class="stats-grid">${stats.map(([label, key, ic, color, desc]) => `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="icon-tile ${color}">${icon(ic)}</span></div><div class="stat-number">${key === "employees" ? numeric(d[key]) : money(d[key])}</div><div class="stat-meta"><span class="tiny-dot ${color}"></span>${esc(desc)}</div></article>`).join("")}</section>
+ <section class="stats-grid">${stats.map(([label, key, ic, color, desc]) => `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="icon-tile ${color}">${icon(ic)}</span></div><div class="stat-number">${key === "employees" ? numeric(d[key]) : money(d[key])}</div><div class="stat-meta"><span class="tiny-dot ${color}"></span>${esc(t(desc))}</div></article>`).join("")}</section>
  <div class="section-label"><h2>أقسام أعمالك</h2><span>كل التفاصيل، في متناولك</span></div><section class="module-grid">${Object.entries(
    modules,
  )
@@ -592,32 +602,74 @@ function modulePage(key) {
           .filter(canPage)
           .map(
             (p) =>
-              `<a class="feature-card" href="#/${p}"><span class="icon-tile ${m.color}">${icon(p.startsWith("report_") ? "chart" : p.startsWith("doc_") ? "receipt" : p === "branches" ? "branch" : m.icon)}</span><h3>${esc(title(p))}</h3><p>${p.startsWith("report_") ? "عرض وتحليل وتصدير البيانات" : p.startsWith("doc_") ? "إنشاء ومتابعة وترحيل المستندات" : "إضافة وتعديل وإدارة السجلات"}</p>${icon("arrow")}</a>`,
+              `<a class="feature-card" href="#/${p}"><span class="icon-tile ${m.color}">${icon(p.startsWith("report_") ? "chart" : p.startsWith("doc_") ? "receipt" : p === "branches" ? "branch" : m.icon)}</span><h3>${esc(t(title(p)))}</h3><p>${p.startsWith("report_") ? "عرض وتحليل وتصدير البيانات" : p.startsWith("doc_") ? "إنشاء ومتابعة وترحيل المستندات" : "إضافة وتعديل وإدارة السجلات"}</p>${icon("arrow")}</a>`,
           )
           .join("")}</div>`,
     )
     .join("")}`;
 }
-function display(value, key, spec) {
+// Only unchanged built-in chart names are presentation labels. Custom names stay exact.
+const chartNames = {
+  "1000": "الأصول", "1100": "الصندوق", "1110": "البنك", "1200": "العملاء",
+  "1300": "المخزون", "1400": "ضريبة مدخلات", "1500": "سلف الموظفين", "1600": "الأصول الثابتة",
+  "2000": "الالتزامات", "2100": "الموردون", "2200": "ضريبة مخرجات", "2300": "الرواتب المستحقة",
+  "2400": "مجمع الإهلاك", "3000": "حقوق الملكية", "3100": "رأس المال والأرصدة الافتتاحية",
+  "4000": "الإيرادات", "4100": "إيرادات المبيعات", "4200": "إيرادات أخرى",
+  "5000": "المصروفات", "5100": "تكلفة البضاعة المباعة", "5200": "الرواتب والأجور",
+  "5300": "مصروفات تشغيلية", "5400": "مصروف الإهلاك", "5500": "فروق الجرد والتالف",
+};
+function accountLabel(value, row) {
+  if (state.page === "report_balance_sheet" && row?.code === "3999" && value === "نتيجة الأعمال المرحلة") return t(value);
+  return row?.code && chartNames[row.code] === value ? t(value) : value;
+}
+function journalDescription(row) {
+  return ["document", "payment", "payroll", "loan", "depreciation"].includes(row?.source_type)
+    ? t(row.description) : row?.description;
+}
+function dateLabel(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return value ?? "—";
+  return new Intl.DateTimeFormat(window.I18n.locale, {
+    year: "numeric", month: "2-digit", day: "2-digit", numberingSystem: "latn",
+  }).format(new Date(`${value}T12:00:00`));
+}
+function display(value, key, spec, row = null) {
   if (value === null || value === undefined || value === "")
     return '<span class="muted">—</span>';
   const f = spec?.fields.find((f) => f.key === key);
-  if (f?.type === "ref")
-    return esc(
-      state.boot.refs[f.ref]?.find((r) => r.id === Number(value))?.name ||
-        value,
-    );
+  if (f?.type === "ref") {
+    const ref = state.boot.refs[f.ref]?.find((r) => r.id === Number(value));
+    return esc(ref ? f.ref === "accounts" ? accountLabel(ref.name, ref) : ref.name : value);
+  }
+  if (key === "name") return esc(accountLabel(value, row));
+  if (key === "reason" && state.page === "report_moves")
+    return esc(t(state.boot.kinds[value]?.[0] || value));
+  if (key === "description" && state.page === "report_statement" && row === state.reportRows[0] && value === "الرصيد الافتتاحي")
+    return esc(t(value));
+  if (key === "description" && row?.source_type) return esc(journalDescription(row));
   if (key === "status") return badge(value);
   if (key === "kind")
-    return `<span class="doc-type">${esc(state.boot.kinds[value]?.[0] || erpKind(value))}</span>`;
-  if (key === "role") return esc(state.boot.roles[value] || value);
+    return `<span class="doc-type">${esc(t(state.boot.kinds[value]?.[0] || erpKind(value)))}</span>`;
+  if (key === "role") return esc(t(state.boot.roles[value] || value));
   if (key === "active") return badge(value ? "نشط" : "موقوف");
   if (key === "direction")
     return badge(value === "in" ? "قبض" : value === "out" ? "صرف" : value);
   if (key === "method")
-    return esc(
+    return esc(t(
       { cash: "نقدي", bank: "تحويل بنكي", card: "بطاقة" }[value] || value,
-    );
+    ));
+  if (f?.type === "select") {
+    const option = f.options.find((o) => String(typeof o === "object" ? o.value : o) === String(value));
+    return esc(t(typeof option === "object" ? option.label : option ?? value));
+  }
+  if (key === "source_type") return esc(t({
+    document: "المستندات", payment: "سند قبض / صرف", payroll: "مسيرات الرواتب",
+    loan: "سلف الموظفين", depreciation: "احتساب إهلاك الأصول", manual: "قيد يومية يدوي",
+  }[value] || erpKind(value)));
+  if (["progress", "type"].includes(key)) return esc(t(erpKind(value)));
+  if (key === "entity") return esc(t(title(value)));
+  if (key === "action") return esc(t(value));
+  if (/^(?:\d{4}-\d{2}-\d{2})$/.test(String(value)) && (key === "date" || key.endsWith("_date")))
+    return esc(dateLabel(value));
   if (typeof value === "number")
     return `<span class="num">${numeric(value)}</span>`;
   return esc(value);
@@ -633,7 +685,7 @@ function erpKind(value) {
   );
 }
 function table(rows, columns, actions = null, spec = null) {
-  return `<div class="table-scroll"><table><thead><tr>${columns.map((k) => `<th>${esc(spec?.fields.find((f) => f.key === k)?.label || colNames[k] || k)}</th>`).join("")}${actions ? '<th class="actions-col">الإجراءات</th>' : ""}</tr></thead><tbody>${rows
+  return `<div class="table-scroll"><table><thead><tr>${columns.map((k) => `<th>${esc(t(spec?.fields.find((f) => f.key === k)?.label || colNames[k] || k))}</th>`).join("")}${actions ? '<th class="actions-col">الإجراءات</th>' : ""}</tr></thead><tbody>${rows
     .map(
       (r, i) =>
         `<tr data-search="${esc(
@@ -641,7 +693,7 @@ function table(rows, columns, actions = null, spec = null) {
             .map((v) => String(v ?? ""))
             .join(" ")
             .toLowerCase(),
-        )}">${columns.map((k, j) => `<td class="${j === 0 ? "first-col" : ""}">${j === 0 && k === "name" ? `<span class="table-name"><span class="table-avatar">${esc(String(r[k]).slice(0, 1))}</span>${display(r[k], k, spec)}</span>` : display(r[k], k, spec)}</td>`).join("")}${actions ? `<td><div class="row-actions">${actions(r, i)}</div></td>` : ""}</tr>`,
+        )}">${columns.map((k, j) => `<td class="${j === 0 ? "first-col" : ""}">${j === 0 && k === "name" ? `<span class="table-name"><span class="table-avatar">${esc(String(accountLabel(r[k], r)).slice(0, 1))}</span>${display(r[k], k, spec, r)}</span>` : display(r[k], k, spec, r)}</td>`).join("")}${actions ? `<td><div class="row-actions">${actions(r, i)}</div></td>` : ""}</tr>`,
     )
     .join(
       "",
@@ -701,7 +753,7 @@ async function documentModal(kind, source = null) {
     ).filter((d) => d.status === "posted");
   modal(
     state.boot.kinds[kind][0],
-    `<form id="document-form"><div class="modal-body"><div class="inline-note compact">${icon("info")}${kind === "adjustment" ? "أدخل الكمية الفعلية بعد الجرد؛ الفرق يُرحّل على المخزون والحسابات." : kind === "receipt" ? "استلام بدون فاتورة: يثبت المخزون مقابل الأرصدة الافتتاحية. للمشتريات استخدم فاتورة مشتريات، أو حوّل أمر الشراء." : "راجع الأصناف والأسعار قبل الترحيل. المسودة لا تغيّر أرصدة المخزون أو الحسابات."}</div>${source ? `<div class="source-chip">${icon("file")} مستند مصدر: ${esc(source.number)}</div>` : ""}<div class="form-grid three">${originals.length ? inputField({ key: "original_document", label: "الفاتورة الأصلية", type: "select", required: true, options: originals.map((d) => ({ value: d.id, label: `${d.number} — ${d.party}` })) }) : ""}${inputField({ key: "date", label: "تاريخ المستند", type: "date", required: true }, dateNow())}${inputField({ key: "warehouse_id", label: "المخزن", type: "ref", required: true, ref: "warehouses" }, source?.warehouse_id || state.boot.refs.warehouses[0]?.id)}${customer ? inputField({ key: "customer_id", label: "العميل", type: "ref", required: true, ref: "customers" }, source?.customer_id) : ""}${supplier ? inputField({ key: "supplier_id", label: "المورد", type: "ref", required: true, ref: "suppliers" }, source?.supplier_id) : ""}${kind === "inspection" ? inputField({ key: "appointment_date", label: "موعد المعاينة", type: "date" }, source?.appointment_date) + inputField({ key: "location", label: "عنوان المعاينة" }, source?.location) : ""}${kind === "transfer" ? inputField({ key: "target_warehouse_id", label: "المخزن المستلم", type: "ref", required: true, ref: "warehouses" }) : ""}${fiscal ? inputField({ key: "due_date", label: "تاريخ الاستحقاق", type: "date" }, dateNow()) : ""}</div><div class="line-add"><select id="line-product" aria-label="اختر صنفًا"><option value="">اختر صنفًا لإضافته…</option>${state.catalog.products.map((p) => `<option value="${p.id}">${esc(p.sku)} — ${esc(p.name)}</option>`).join("")}</select><input type="text" id="barcode-input" placeholder="امسح الباركود ثم Enter" aria-label="قارئ الباركود" autocomplete="off">${button(`${icon("plus")} إضافة`, "add-line", "secondary")}</div><div id="document-lines"></div><div class="document-bottom"><div class="form-grid">${fiscal ? inputField({ key: "discount", label: "خصم على الفاتورة", type: "money" }, source?.discount || 0) + inputField({ key: "tax_rate", label: "ضريبة القيمة المضافة %", type: "number" }, source?.tax_rate ?? state.boot.settings.tax_rate) : ""}${
+    `<form id="document-form"><div class="modal-body"><div class="inline-note compact">${icon("info")}${kind === "adjustment" ? "أدخل الكمية الفعلية بعد الجرد؛ الفرق يُرحّل على المخزون والحسابات." : kind === "receipt" ? "استلام بدون فاتورة: يثبت المخزون مقابل الأرصدة الافتتاحية. للمشتريات استخدم فاتورة مشتريات، أو حوّل أمر الشراء." : "راجع الأصناف والأسعار قبل الترحيل. المسودة لا تغيّر أرصدة المخزون أو الحسابات."}</div>${source ? `<div class="source-chip">${icon("file")} مستند مصدر: ${esc(source.number)}</div>` : ""}<div class="form-grid three">${originals.length ? inputField({ key: "original_document", label: "الفاتورة الأصلية", type: "select", translateOptions: false, required: true, options: originals.map((d) => ({ value: d.id, label: `${d.number} — ${d.party}` })) }) : ""}${inputField({ key: "date", label: "تاريخ المستند", type: "date", required: true }, dateNow())}${inputField({ key: "warehouse_id", label: "المخزن", type: "ref", required: true, ref: "warehouses" }, source?.warehouse_id || state.boot.refs.warehouses[0]?.id)}${customer ? inputField({ key: "customer_id", label: "العميل", type: "ref", required: true, ref: "customers" }, source?.customer_id) : ""}${supplier ? inputField({ key: "supplier_id", label: "المورد", type: "ref", required: true, ref: "suppliers" }, source?.supplier_id) : ""}${kind === "inspection" ? inputField({ key: "appointment_date", label: "موعد المعاينة", type: "date" }, source?.appointment_date) + inputField({ key: "location", label: "عنوان المعاينة" }, source?.location) : ""}${kind === "transfer" ? inputField({ key: "target_warehouse_id", label: "المخزن المستلم", type: "ref", required: true, ref: "warehouses" }) : ""}${fiscal ? inputField({ key: "due_date", label: "تاريخ الاستحقاق", type: "date" }, dateNow()) : ""}</div><div class="line-add"><select id="line-product" aria-label="اختر صنفًا"><option value="">اختر صنفًا لإضافته…</option>${state.catalog.products.map((p) => `<option value="${p.id}">${esc(p.sku)} — ${esc(p.name)}</option>`).join("")}</select><input type="text" id="barcode-input" placeholder="امسح الباركود ثم Enter" aria-label="قارئ الباركود" autocomplete="off">${button(`${icon("plus")} إضافة`, "add-line", "secondary")}</div><div id="document-lines"></div><div class="document-bottom"><div class="form-grid">${fiscal ? inputField({ key: "discount", label: "خصم على الفاتورة", type: "money" }, source?.discount || 0) + inputField({ key: "tax_rate", label: "ضريبة القيمة المضافة %", type: "number" }, source?.tax_rate ?? state.boot.settings.tax_rate) : ""}${
       ["sale", "sale_return", "purchase", "purchase_return"].includes(kind)
         ? inputField(
             { key: "paid", label: "المبلغ المدفوع الآن", type: "money" },
@@ -729,7 +781,7 @@ async function documentModal(kind, source = null) {
 function renderDocLines() {
   const container = $("#document-lines");
   if (!container) return;
-  container.innerHTML = state.documentLines.length
+  setHTML(container, state.documentLines.length
     ? `<div class="table-scroll"><table class="line-table"><thead><tr><th>الصنف</th><th>المتاح</th><th>الكمية ${state.docKind === "adjustment" ? "الفعلية" : ""}</th><th>السعر</th><th>الإجمالي</th><th></th></tr></thead><tbody>${state.documentLines
         .map((l, i) => {
           const p = state.catalog.products.find((p) => p.id === l.product_id),
@@ -741,7 +793,7 @@ function renderDocLines() {
           return `<tr><td><strong>${esc(p?.name)}</strong><small class="block muted">${esc(p?.sku)}</small></td><td>${numeric(stock)}</td><td><input class="line-input" data-line="${i}" data-field="quantity" type="number" step="0.001" min="${state.docKind === "adjustment" ? 0 : 0.001}" value="${l.quantity}" required aria-label="كمية ${esc(p?.name)}"></td><td><input class="line-input" data-line="${i}" data-field="price" type="number" step="0.01" min="0" value="${l.price}" required aria-label="سعر ${esc(p?.name)}"></td><td class="num line-total" data-index="${i}">${money(l.quantity * l.price)}</td><td>${button(icon("close"), "remove-line", "icon-button danger-text", `data-index="${i}" aria-label="حذف الصنف"`)}</td></tr>`;
         })
         .join("")}</tbody></table></div>`
-    : empty("أضف أصناف المستند", "اختر صنفًا أو امسح باركود المنتج.");
+    : empty("أضف أصناف المستند", "اختر صنفًا أو امسح باركود المنتج."));
   updateDocSummary();
 }
 function updateDocSummary() {
@@ -771,7 +823,7 @@ function updateDocSummary() {
     paid = Number($("[name=paid]")?.value || 0);
   const tax = Math.round((subtotal - discount) * taxRate) / 100,
     total = subtotal - discount + tax;
-  container.innerHTML = `<div><span>إجمالي الأصناف</span><b>${money(subtotal)}</b></div><div><span>الخصم</span><span>− ${money(discount)}</span></div><div><span>الضريبة (${numeric(taxRate)}%)</span><span>${money(tax)}</span></div><div class="grand-total"><span>الإجمالي</span><b>${money(total)}</b></div><div><span>المتبقي</span><b>${money(total - paid)}</b></div>`;
+  setHTML(container, `<div><span>إجمالي الأصناف</span><b>${money(subtotal)}</b></div><div><span>الخصم</span><span>− ${money(discount)}</span></div><div><span>الضريبة (${numeric(taxRate)}%)</span><span>${money(tax)}</span></div><div class="grand-total"><span>الإجمالي</span><b>${money(total)}</b></div><div><span>المتبقي</span><b>${money(total - paid)}</b></div>`);
 }
 function addLine(pid) {
   if (!pid) return;
@@ -812,7 +864,7 @@ async function viewDocument(id) {
   const m = state.boot.kinds[d.kind][1];
   modal(
     d.number,
-    `<div class="modal-body printable" id="print-content"><div class="invoice-header"><div><h2>${esc(state.boot.settings.company_name)}</h2><p>${esc(state.boot.settings.company_address)}</p><p>الرقم الضريبي: ${esc(state.boot.settings.tax_number || "—")}</p></div><div><span class="eyebrow">${esc(state.boot.kinds[d.kind][0])}</span><h2 class="num">${esc(d.number)}</h2>${badge(d.status)}</div></div><div class="detail-grid"><div><small>التاريخ</small><b>${esc(d.date)}</b></div><div><small>العميل / المورد</small><b>${esc(d.customer || d.supplier || "—")}</b></div><div><small>المخزن</small><b>${esc(d.warehouse)}</b></div><div><small>الاستحقاق</small><b>${esc(d.due_date)}</b></div>${d.kind === "inspection" ? `<div><small>مرحلة المعاينة</small><b>${esc(d.progress)}</b></div><div><small>موعد وموقع المعاينة</small><b>${esc(d.appointment_date || "—")} — ${esc(d.location || "—")}</b></div>` : ""}${d.target_warehouse ? `<div><small>المخزن المستلم</small><b>${esc(d.target_warehouse)}</b></div>` : ""}</div>${table(d.lines, ["sku", "name", "quantity", "price", "total"])}<div class="invoice-summary detail-summary"><div><span>إجمالي الأصناف</span><b>${money(d.subtotal)}</b></div><div><span>خصم</span><b>${money(d.discount)}</b></div><div><span>الضريبة</span><b>${money(d.tax)}</b></div><div class="grand-total"><span>الإجمالي</span><b>${money(d.total)}</b></div><div><span>المدفوع / المتبقي</span><b>${money(d.paid)} / ${money(d.total - d.paid)}</b></div></div><p class="muted">${esc(d.note)}</p><p class="print-signatures">توقيع المستلم: __________________ &nbsp; توقيع المسؤول: __________________</p></div><footer class="modal-footer">${button(`${icon("print")} طباعة`, "print", "primary")}${d.status === "draft" && allowed(m, true) ? button("ترحيل المستند", "post-doc", "secondary", `data-id="${id}"`) : ""}${d.status === "posted" && ["inspection", "purchase_order", "sale", "purchase"].includes(d.kind) && allowed(m, true) ? button(["sale", "purchase"].includes(d.kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة", "convert-doc", "secondary", `data-id="${id}"`) : ""}${["sale", "purchase", "sale_return", "purchase_return"].includes(d.kind) && d.status === "posted" && d.paid < d.total && allowed("accounting", true) ? button("تسجيل سداد", "pay-doc", "secondary", `data-id="${id}"`) : ""}</footer>`,
+    `<div class="modal-body printable" id="print-content"><div class="invoice-header"><div><h2>${esc(state.boot.settings.company_name)}</h2><p>${esc(state.boot.settings.company_address)}</p><p>الرقم الضريبي: ${esc(state.boot.settings.tax_number || "—")}</p></div><div><span class="eyebrow">${esc(t(state.boot.kinds[d.kind][0]))}</span><h2 class="num">${esc(d.number)}</h2>${badge(d.status)}</div></div><div class="detail-grid"><div><small>التاريخ</small><b>${esc(dateLabel(d.date))}</b></div><div><small>العميل / المورد</small><b>${esc(d.customer || d.supplier || "—")}</b></div><div><small>المخزن</small><b>${esc(d.warehouse)}</b></div><div><small>الاستحقاق</small><b>${esc(dateLabel(d.due_date))}</b></div>${d.kind === "inspection" ? `<div><small>مرحلة المعاينة</small><b>${esc(t(d.progress))}</b></div><div><small>موعد وموقع المعاينة</small><b>${esc(dateLabel(d.appointment_date || "—"))} — ${esc(d.location || "—")}</b></div>` : ""}${d.target_warehouse ? `<div><small>المخزن المستلم</small><b>${esc(d.target_warehouse)}</b></div>` : ""}</div>${table(d.lines, ["sku", "name", "quantity", "price", "total"])}<div class="invoice-summary detail-summary"><div><span>إجمالي الأصناف</span><b>${money(d.subtotal)}</b></div><div><span>خصم</span><b>${money(d.discount)}</b></div><div><span>الضريبة</span><b>${money(d.tax)}</b></div><div class="grand-total"><span>الإجمالي</span><b>${money(d.total)}</b></div><div><span>المدفوع / المتبقي</span><b>${money(d.paid)} / ${money(d.total - d.paid)}</b></div></div><p class="muted">${esc(d.note)}</p><p class="print-signatures">توقيع المستلم: __________________ &nbsp; توقيع المسؤول: __________________</p></div><footer class="modal-footer">${button(`${icon("print")} طباعة`, "print", "primary")}${d.status === "draft" && allowed(m, true) ? button("ترحيل المستند", "post-doc", "secondary", `data-id="${id}"`) : ""}${d.status === "posted" && ["inspection", "purchase_order", "sale", "purchase"].includes(d.kind) && allowed(m, true) ? button(["sale", "purchase"].includes(d.kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة", "convert-doc", "secondary", `data-id="${id}"`) : ""}${["sale", "purchase", "sale_return", "purchase_return"].includes(d.kind) && d.status === "posted" && d.paid < d.total && allowed("accounting", true) ? button("تسجيل سداد", "pay-doc", "secondary", `data-id="${id}"`) : ""}</footer>`,
     true,
   );
 }
@@ -971,7 +1023,7 @@ async function paymentModal(doc = null) {
         ],
       },
       direction,
-    )}${inputField({ key: "document_id", label: "الفاتورة (اختياري)", type: "select", options: (doc ? [doc] : docs).map((d) => ({ value: d.id, label: `${d.number} — متبقي ${numeric(d.total - d.paid)}` })) }, doc?.id)}${inputField({ key: "amount", label: "المبلغ", type: "money", required: true }, doc ? doc.total - doc.paid : "")}${inputField(
+    )}${inputField({ key: "document_id", label: "الفاتورة (اختياري)", type: "select", translateOptions: false, options: (doc ? [doc] : docs).map((d) => ({ value: d.id, label: `${d.number} — ${t("متبقي")} ${numeric(d.total - d.paid)}` })) }, doc?.id)}${inputField({ key: "amount", label: "المبلغ", type: "money", required: true }, doc ? doc.total - doc.paid : "")}${inputField(
       {
         key: "method",
         label: "وسيلة الدفع",
@@ -1097,10 +1149,10 @@ async function posPage() {
   return `${pageHeader("نقطة البيع", "بيع سريع بالباركود، مع تسجيل السداد وتحديث المخزون والحسابات.", button(`${icon("cart")} بدء عملية بيع`, "new-doc", "primary", 'data-kind="sale"'))}<section class="inline-note">${icon("info")} اضغط على أي صنف لبدء فاتورة، أو استخدم قارئ الباركود داخل الفاتورة. البطاقة والتحويل طرق لتسجيل سداد تم خارج النظام.</section><section class="pos-grid">${state.catalog.products.map((p) => `<button class="pos-product" data-action="pos-product" data-id="${p.id}" data-search="${esc(p.name + " " + p.sku + " " + p.barcode)}"><div class="product-illustration">${icon("box")}</div><small>${esc(p.sku)}</small><h3>${esc(p.name)}</h3><b>${money(p.price)}</b><span class="round-plus">${icon("plus")}</span></button>`).join("") || empty("أضف أصنافك أولًا", "تظهر هنا المنتجات المسجلة في المخزون.")}</section>`;
 }
 function filterTable(query) {
-  const q = query.toLocaleLowerCase("ar");
+  const q = query.toLocaleLowerCase(window.I18n.language);
   $$("[data-search]").forEach((row) => {
     const text = (row.dataset.search + " " + row.textContent).toLocaleLowerCase(
-      "ar",
+      window.I18n.language,
     );
     const status = $("#status-filter")?.value;
     const match =
@@ -1119,20 +1171,22 @@ function filterTable(query) {
 function confirmAction(titleText, message, action) {
   modal(
     titleText,
-    `<div class="modal-body"><p class="confirm-message">${esc(message)}</p></div><footer class="modal-footer">${button("تأكيد", "confirmed", "primary")}${button("إلغاء", "close", "secondary")}</footer>`,
+    `<div class="modal-body"><p class="confirm-message">${esc(t(message))}</p></div><footer class="modal-footer">${button("تأكيد", "confirmed", "primary")}${button("إلغاء", "close", "secondary")}</footer>`,
   );
   state.confirm = action;
 }
 async function download(path) {
   const response = await fetch(`/api/${path}`, {
-    headers: { "X-ERP-Request": "1" },
+    headers: { "X-ERP-Request": "1", "Accept-Language": window.I18n.language },
   });
   if (!response.ok) {
     let data;
     try {
       data = await response.json();
     } catch {}
-    throw new Error(data?.error || "تعذر تنزيل الملف");
+    const error = new Error(data?.error || t("تعذر تنزيل الملف"));
+    error.localized = Boolean(data?.error);
+    throw error;
   }
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
@@ -1156,9 +1210,13 @@ function printContent(selector, titleText) {
     print.id = "print-area";
     document.body.append(print);
   }
-  print.innerHTML = `<header class="print-report-header"><h1>${esc(state.boot.settings.company_name)}</h1><h2>${esc(titleText)}</h2><p>${esc(dateNow())}</p></header>${source.innerHTML}`;
+  print.lang = window.I18n.language;
+  print.dir = window.I18n.language === "ar" ? "rtl" : "ltr";
+  setHTML(print, `<header class="print-report-header"><h1>${esc(state.boot.settings.company_name)}</h1><h2>${esc(t(titleText))}</h2><p>${esc(dateLabel(dateNow()))}</p></header>`);
+  // Clone already-rendered rows: translating serialized DOM would translate customer names.
+  for (const child of source.childNodes) print.append(child.cloneNode(true));
   window.print();
-  print.innerHTML = "";
+  print.replaceChildren();
 }
 const code39Patterns = [
   "nnnwwnwnn",
@@ -1243,6 +1301,21 @@ document.addEventListener("click", async (event) => {
     id = Number(el.dataset.id),
     resource = el.dataset.resource;
   try {
+    if (action === "language") {
+      const form = $("#auth-form");
+      const authValues = form ? formData(form) : null;
+      const hasEdits = !form && ($("#modal-root form") || $("#settings-form[data-dirty=true]"));
+      if (hasEdits && !window.confirm(t("سيتم إغلاق النموذج وفقد التعديلات غير المحفوظة. هل تريد تغيير اللغة؟"))) return;
+      window.I18n.setLanguage(window.I18n.language === "ar" ? "en" : "ar");
+      closeModal();
+      if (state.boot) return await renderPage();
+      renderAuth(state.auth?.setup || false, state.auth?.setupTokenRequired || false);
+      for (const [key, value] of Object.entries(authValues || {})) {
+        const field = $("#auth-form").elements.namedItem(key);
+        if (field) field.value = value;
+      }
+      return;
+    }
     if (action === "close") return closeModal();
     if (action === "menu") return document.body.classList.toggle("menu-open");
     if (action === "new-resource") return resourceModal(resource);
@@ -1252,7 +1325,7 @@ document.addEventListener("click", async (event) => {
         spec = state.boot.resources[resource];
       return modal(
         spec.label,
-        `<div class="modal-body"><div class="detail-grid">${spec.fields.map((f) => `<div><small>${esc(f.label)}</small><b>${display(r[f.key], f.key, spec)}</b></div>`).join("")}</div></div>`,
+        `<div class="modal-body"><div class="detail-grid">${spec.fields.map((f) => `<div><small>${esc(t(f.label))}</small><b>${display(r[f.key], f.key, spec, r)}</b></div>`).join("")}</div></div>`,
       );
     }
     if (action === "delete-resource")
@@ -1314,14 +1387,14 @@ document.addEventListener("click", async (event) => {
     if (action === "new-payment") return await paymentModal();
     if (action === "new-journal") return journalModal();
     if (action === "add-journal-line")
-      return $("#journal-lines").insertAdjacentHTML("beforeend", journalLine());
+      return $("#journal-lines").insertAdjacentHTML("beforeend", window.I18n.html(journalLine()));
     if (action === "remove-journal-line")
       return el.closest(".journal-line").remove();
     if (action === "view-journal") {
       const d = await api(`journal/${id}`);
       return modal(
         `قيد #${id}`,
-        `<div class="modal-body printable" id="print-content"><h3>${esc(d.journal.description)}</h3><p>${esc(d.journal.date)}</p>${table(d.lines, ["code", "name", "party", "debit", "credit"])}</div><footer class="modal-footer">${button(`${icon("print")} طباعة`, "print", "primary")}</footer>`,
+        `<div class="modal-body printable" id="print-content"><h3>${esc(journalDescription(d.journal))}</h3><p>${esc(d.journal.date)}</p>${table(d.lines, ["code", "name", "party", "debit", "credit"])}</div><footer class="modal-footer">${button(`${icon("print")} طباعة`, "print", "primary")}</footer>`,
         true,
       );
     }
@@ -1332,7 +1405,7 @@ document.addEventListener("click", async (event) => {
     if (action === "edit-user") return userModal(id);
     if (action === "export-report")
       return await download(
-        `reports/${state.page.slice(7)}?${new URLSearchParams({ ...reportParams(), format: "csv" })}`,
+        `reports/${state.page.slice(7)}?${new URLSearchParams({ ...reportParams(), format: "csv", lang: window.I18n.language })}`,
       );
     if (action === "print-report")
       return printContent("#report-content", title(state.page));
@@ -1363,7 +1436,7 @@ document.addEventListener("click", async (event) => {
     if (action === "profile")
       return modal(
         "حسابي",
-        `<div class="modal-body"><div class="profile-info"><span class="avatar">${esc(state.boot.user.name[0])}</span><div><h3>${esc(state.boot.user.name)}</h3><p>${esc(state.boot.roles[state.boot.user.role])}</p></div></div><form id="password-form"><div class="form-grid one">${inputField({ key: "current", label: "كلمة المرور الحالية", type: "password", required: true })}${inputField({ key: "password", label: "كلمة المرور الجديدة", type: "password", required: true })}</div><div class="form-error"></div><button class="btn secondary block" type="submit">تغيير كلمة المرور</button></form></div><footer class="modal-footer">${button(`${icon("logout")} تسجيل الخروج`, "logout", "danger")}</footer>`,
+        `<div class="modal-body"><div class="profile-info"><span class="avatar">${esc(state.boot.user.name[0])}</span><div><h3>${esc(state.boot.user.name)}</h3><p>${esc(t(state.boot.roles[state.boot.user.role]))}</p></div></div><form id="password-form"><div class="form-grid one">${inputField({ key: "current", label: "كلمة المرور الحالية", type: "password", required: true })}${inputField({ key: "password", label: "كلمة المرور الجديدة", type: "password", required: true })}</div><div class="form-error"></div><button class="btn secondary block" type="submit">تغيير كلمة المرور</button></form></div><footer class="modal-footer">${button(`${icon("logout")} تسجيل الخروج`, "logout", "danger")}</footer>`,
       );
     if (action === "logout") {
       await api("logout", { method: "POST", body: {} });
@@ -1416,7 +1489,7 @@ document.addEventListener("click", async (event) => {
       );
     }
   } catch (error) {
-    toast(error.message, true);
+    toast(errorText(error), true);
     el.disabled = false;
   }
 });
@@ -1503,6 +1576,7 @@ document.addEventListener("submit", async (event) => {
     } else if (form.id === "settings-form") {
       await api("settings", { method: "PUT", body: data });
       await refreshBoot();
+      delete form.dataset.dirty;
       toast("تم حفظ إعدادات الشركة");
       return;
     } else if (form.id === "password-form") {
@@ -1514,24 +1588,25 @@ document.addEventListener("submit", async (event) => {
       state.reportRows = await api(
         `reports/${state.page.slice(7)}?${new URLSearchParams(data)}`,
       );
-      $("#report-content").innerHTML = renderReport(
+      setHTML($("#report-content"), renderReport(
         state.page.slice(7),
         state.reportRows,
-      );
+      ));
       return;
     } else return;
     closeModal();
     await renderPage();
     toast("تم الحفظ بنجاح");
   } catch (error) {
-    if (err) err.textContent = error.message;
-    else toast(error.message, true);
+    if (err) err.textContent = errorText(error);
+    else toast(errorText(error), true);
   } finally {
     buttons.forEach((b) => (b.disabled = false));
   }
 });
 document.addEventListener("input", (event) => {
   const el = event.target;
+  if (el.closest("#settings-form")) el.closest("form").dataset.dirty = "true";
   if (["table-search", "global-search"].includes(el.id)) {
     state.search = el.value;
     filterTable(el.value);
@@ -1540,9 +1615,9 @@ document.addEventListener("input", (event) => {
     const index = Number(el.dataset.line);
     state.documentLines[index][el.dataset.field] = Number(el.value);
     const l = state.documentLines[index];
-    $(`.line-total[data-index="${index}"]`).innerHTML = money(
+    setHTML($(`.line-total[data-index="${index}"]`), money(
       l.quantity * l.price,
-    );
+    ));
     updateDocSummary();
   }
   if (["discount", "tax_rate", "paid"].includes(el.name)) updateDocSummary();
@@ -1558,14 +1633,13 @@ document.addEventListener("change", async (event) => {
     }
     if (el.name === "party_type") {
       const sel = $("[name=party_id]");
-      sel.innerHTML =
-        '<option value="">اختر الطرف</option>' +
+      setHTML(sel, '<option value="">اختر الطرف</option>' +
         state.boot.refs[el.value === "customer" ? "customers" : "suppliers"]
           .map((o) => `<option value="${o.id}">${esc(o.name)}</option>`)
-          .join("");
+          .join(""));
     }
   } catch (error) {
-    toast(error.message, true);
+    toast(errorText(error), true);
   }
 });
 document.addEventListener("keydown", (event) => {
@@ -1588,7 +1662,7 @@ document.addEventListener("keydown", (event) => {
         p.sku === event.target.value.trim(),
     );
     if (p) addLine(p.id);
-    else toast("لم يتم العثور على هذا الباركود", true);
+    else toast(t("لم يتم العثور على هذا الباركود"), true);
     event.target.value = "";
   }
   if (event.key === "Tab" && $(".modal")) {
@@ -1613,13 +1687,14 @@ window.addEventListener("hashchange", () => {
 });
 async function start() {
   try {
+    await window.I18n.ready;
     const auth = await api("auth");
     if (auth.user) {
       await refreshBoot();
       await renderPage();
     } else renderAuth(auth.setup_required, auth.setup_token_required);
   } catch (error) {
-    $("#app").innerHTML = empty("تعذّر الاتصال بالخادم", error.message);
+    setHTML($("#app"), empty("تعذّر الاتصال بالخادم", errorText(error), true));
   }
 }
 start();

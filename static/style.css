@@ -163,7 +163,7 @@ small {
 }
 .sidebar {
   position: fixed;
-  right: 0;
+  inset-inline-start: 0;
   top: 0;
   bottom: 0;
   width: 248px;
@@ -217,12 +217,13 @@ small {
 .nav-chev {
   width: 13px !important;
   height: 13px !important;
-  margin-right: auto;
+  margin-inline-start: auto;
   transform: rotate(180deg);
   opacity: 0.6;
 }
 .subnav {
-  padding: 3px 43px 6px 4px;
+  padding-block: 3px 6px;
+  padding-inline: 43px 4px;
   font-size: 10px;
 }
 .subnav a {
@@ -238,7 +239,7 @@ small {
 .subnav a.selected:before {
   content: "";
   position: absolute;
-  right: -13px;
+  inset-inline-start: -13px;
   top: 15px;
   width: 4px;
   height: 4px;
@@ -269,7 +270,7 @@ small {
 .sync-card > .icon {
   width: 17px;
   color: #88ad9e;
-  margin-right: auto;
+  margin-inline-start: auto;
 }
 .sync-dot,
 .live-dot {
@@ -292,7 +293,7 @@ small {
   border-top: 1px solid #ffffff12;
   width: 100%;
   padding: 18px 8px 1px;
-  text-align: right;
+  text-align: start;
   font-size: 11px;
 }
 .avatar {
@@ -313,12 +314,12 @@ small {
 }
 .user-card > .icon {
   width: 14px;
-  margin-right: auto;
+  margin-inline-start: auto;
   transform: rotate(180deg);
   color: #7f9f90;
 }
 .main-wrap {
-  margin-right: 248px;
+  margin-inline-start: 248px;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -435,7 +436,7 @@ small {
 .notification i {
   position: absolute;
   top: 6px;
-  left: 8px;
+  inset-inline-end: 8px;
   background: #e5a168;
   width: 5px;
   height: 5px;
@@ -630,7 +631,7 @@ small {
 .banner-tag {
   position: absolute;
   bottom: 16px;
-  left: 24px;
+  inset-inline-end: 24px;
   letter-spacing: 2.5px;
   font-size: 6px;
   color: #72977d;
@@ -642,14 +643,14 @@ small {
   width: 420px;
   height: 235px;
   flex-shrink: 0;
-  margin-left: 18px;
+  margin-inline-end: 18px;
 }
 .hero-rings {
   width: 310px;
   height: 310px;
   position: absolute;
   border: 1px solid #ffffff0a;
-  left: 40px;
+  inset-inline-end: 40px;
   top: -36px;
   border-radius: 50%;
   box-shadow:
@@ -665,7 +666,7 @@ small {
 }
 .hero-core {
   position: absolute;
-  left: 148px;
+  inset-inline-end: 148px;
   top: 58px;
   width: 116px;
   height: 116px;
@@ -728,16 +729,16 @@ small {
 .float-card > .icon:last-child {
   width: 14px;
   height: 14px;
-  margin-right: 9px;
+  margin-inline-start: 9px;
 }
 .inventory-float {
   top: 25px;
-  left: 31px;
+  inset-inline-end: 31px;
   transform: rotate(5deg);
 }
 .finance-float {
   bottom: 28px;
-  right: 0;
+  inset-inline-start: 0;
   transform: rotate(4deg);
 }
 .finance-float > .icon:first-child {
@@ -752,11 +753,11 @@ small {
   width: 5px;
   background: #d2ee9c;
   border-radius: 50%;
-  margin-right: 14px;
+  margin-inline-start: 14px;
 }
 .float-mini {
   position: absolute;
-  left: 60px;
+  inset-inline-end: 60px;
   bottom: 24px;
   background: #ffffff0a;
   border: 1px solid #ffffff11;
@@ -772,11 +773,11 @@ small {
   font-weight: 300;
 }
 .cross-one {
-  right: 22px;
+  inset-inline-start: 22px;
   top: 24px;
 }
 .cross-two {
-  left: 20px;
+  inset-inline-end: 20px;
   top: 129px;
   font-size: 13px;
 }
@@ -861,7 +862,7 @@ small {
   font-size: 10px;
   font-weight: 400;
   color: #95a194;
-  margin-right: 4px;
+  margin-inline-start: 4px;
   letter-spacing: 0;
 }
 .stat-meta {
@@ -1076,7 +1077,7 @@ small {
   text-overflow: ellipsis;
 }
 .attention-list > a > .icon {
-  margin-right: auto;
+  margin-inline-start: auto;
   width: 12px;
   height: 12px;
   transform: rotate(180deg);
@@ -1101,7 +1102,7 @@ small {
 table {
   width: 100%;
   border-collapse: collapse;
-  text-align: right;
+  text-align: start;
   font-size: 10px;
   white-space: nowrap;
 }
@@ -1218,7 +1219,7 @@ tbody tr:hover {
   margin-top: 2px;
 }
 .demo-banner > .btn {
-  margin-right: auto;
+  margin-inline-start: auto;
 }
 .page-footer {
   font-size: 8px;
@@ -1240,7 +1241,7 @@ tbody tr:hover {
 .page-footer .live-dot {
   width: 4px;
   height: 4px;
-  margin-left: 5px;
+  margin-inline-end: 5px;
 }
 .module-intro {
   display: flex;
@@ -1274,7 +1275,7 @@ tbody tr:hover {
   margin-top: 7px;
 }
 .module-intro > .pill {
-  margin-right: auto;
+  margin-inline-start: auto;
   white-space: nowrap;
 }
 .module-intro.blue {
@@ -1320,7 +1321,7 @@ tbody tr:hover {
 .feature-card > .icon {
   position: absolute;
   top: 26px;
-  left: 23px;
+  inset-inline-end: 23px;
   color: #b2c0af;
   width: 16px;
   height: 16px;
@@ -1439,7 +1440,7 @@ tbody tr:hover {
   flex-shrink: 0;
 }
 .inline-note .btn {
-  margin-right: auto;
+  margin-inline-start: auto;
 }
 .inline-note.compact {
   margin: 0 0 22px;
@@ -1474,7 +1475,7 @@ tbody tr:hover {
   margin-top: 6px;
 }
 .reports-intro > .pill {
-  margin-right: auto;
+  margin-inline-start: auto;
 }
 .report-grid {
   display: grid;
@@ -1504,7 +1505,7 @@ tbody tr:hover {
   margin-top: 3px;
 }
 .report-card > .icon {
-  margin-right: auto;
+  margin-inline-start: auto;
   width: 15px;
   height: 15px;
   color: #a7b89c;
@@ -1671,7 +1672,7 @@ tbody tr:hover {
 .field input[type="time"],
 .field input[type="month"] {
   direction: ltr;
-  text-align: right;
+  text-align: match-parent;
   font-family: "Segoe UI", Tahoma, sans-serif;
 }
 .field input[type="password"] {
@@ -1833,7 +1834,7 @@ tbody tr:hover {
   margin-top: 4px;
 }
 .invoice-header > div:last-child {
-  text-align: left;
+  text-align: end;
 }
 .invoice-header .badge {
   margin-top: 8px;
@@ -1857,7 +1858,8 @@ tbody tr:hover {
   overflow-wrap: anywhere;
 }
 .detail-summary {
-  margin: 26px 0 22px auto;
+  margin-block: 26px 22px;
+  margin-inline: 0 auto;
   width: 300px;
 }
 .print-signatures {
@@ -1952,7 +1954,7 @@ tbody tr:hover {
   line-height: 1.7;
   background: none;
   width: 100%;
-  text-align: right;
+  text-align: start;
 }
 .settings-links > *:last-child {
   border-bottom: 0;
@@ -1963,7 +1965,7 @@ tbody tr:hover {
   height: 17px;
 }
 .settings-links .icon:last-child {
-  margin-right: auto;
+  margin-inline-start: auto;
   width: 13px;
   height: 13px;
   color: #b1bfa6;
@@ -1998,7 +2000,7 @@ tbody tr:hover {
   border: 1px solid var(--line);
   border-radius: 13px;
   padding: 20px;
-  text-align: right;
+  text-align: start;
   position: relative;
   transition: 0.18s;
 }
@@ -2040,7 +2042,7 @@ tbody tr:hover {
 .round-plus {
   position: absolute;
   bottom: 20px;
-  left: 20px;
+  inset-inline-end: 20px;
   width: 28px;
   height: 28px;
   background: #f1f5ec;
@@ -2084,7 +2086,7 @@ tbody tr:hover {
 }
 #toasts {
   position: fixed;
-  left: 27px;
+  inset-inline-end: 27px;
   bottom: 25px;
   z-index: 100;
   display: flex;
@@ -2132,10 +2134,11 @@ tbody tr:hover {
 }
 .auth-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   min-height: 100dvh;
 }
 .auth-story {
+  min-width: 0;
   background: #153f35;
   position: relative;
   overflow: hidden;
@@ -2149,7 +2152,7 @@ tbody tr:hover {
 .auth-story:after {
   content: "";
   position: absolute;
-  left: -230px;
+  inset-inline-end: -230px;
   top: 170px;
   width: 600px;
   height: 600px;
@@ -2193,7 +2196,7 @@ tbody tr:hover {
   grid-template-columns: repeat(2, 1fr);
   gap: 13px;
   position: relative;
-  padding-right: 0;
+  padding-inline-start: 0;
   margin-top: 40px;
   max-width: 310px;
 }
@@ -2217,6 +2220,7 @@ tbody tr:hover {
   color: #b3d494;
 }
 .auth-panel {
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2289,10 +2293,10 @@ tbody tr:hover {
   }
   .welcome-banner {
     height: 270px;
-    padding-right: 45px;
+    padding-inline-start: 45px;
   }
   .hero-art {
-    margin-left: 65px;
+    margin-inline-end: 65px;
   }
   .welcome-banner h2 {
     font-size: 34px;
@@ -2353,11 +2357,11 @@ tbody tr:hover {
 @media (max-width: 1200px) {
   .sidebar {
     width: 222px;
-    padding-right: 14px;
-    padding-left: 14px;
+    padding-inline-start: 14px;
+    padding-inline-end: 14px;
   }
   .main-wrap {
-    margin-right: 222px;
+    margin-inline-start: 222px;
   }
   .main-content {
     padding: 25px 24px;
@@ -2390,21 +2394,21 @@ tbody tr:hover {
   }
   .hero-art {
     width: 330px;
-    margin-left: 0;
+    margin-inline-end: 0;
     transform: scale(0.9);
     transform-origin: left center;
   }
   .hero-core {
-    left: 119px;
+    inset-inline-end: 119px;
   }
   .inventory-float {
-    left: 0;
+    inset-inline-end: 0;
   }
   .finance-float {
-    right: -20px;
+    inset-inline-start: -20px;
   }
   .hero-rings {
-    left: 0;
+    inset-inline-end: 0;
   }
   .stat-card {
     padding: 15px;
@@ -2498,13 +2502,13 @@ tbody tr:hover {
   .hero-art {
     width: 280px;
     transform: scale(0.8);
-    margin-left: -20px;
+    margin-inline-end: -20px;
   }
   .hero-core {
-    left: 105px;
+    inset-inline-end: 105px;
   }
   .finance-float {
-    right: -45px;
+    inset-inline-start: -45px;
   }
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2551,7 +2555,7 @@ tbody tr:hover {
     flex: 1;
   }
   .demo-banner > .btn {
-    margin-right: 50px;
+    margin-inline-start: 50px;
   }
   .settings-layout {
     grid-template-columns: 1fr;
@@ -2610,7 +2614,7 @@ tbody tr:hover {
     width: 248px;
   }
   .main-wrap {
-    margin-right: 0;
+    margin-inline-start: 0;
   }
   .menu-open .sidebar {
     transform: translateX(0);
@@ -2632,7 +2636,7 @@ tbody tr:hover {
     padding: 0 18px;
   }
   .breadcrumbs {
-    margin-left: auto;
+    margin-inline-end: auto;
     font-size: 9px;
   }
   .breadcrumbs > strong {
@@ -2666,14 +2670,14 @@ tbody tr:hover {
   }
   .hero-art {
     transform: scale(0.85);
-    margin-left: 0;
+    margin-inline-end: 0;
     width: 300px;
   }
   .hero-core {
-    left: 110px;
+    inset-inline-end: 110px;
   }
   .finance-float {
-    right: -45px;
+    inset-inline-start: -45px;
   }
   .welcome-banner h2 {
     font-size: 27px;
@@ -2682,7 +2686,7 @@ tbody tr:hover {
     font-size: 10px;
   }
   .auth-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .auth-story {
     min-height: unset;
@@ -2839,29 +2843,29 @@ tbody tr:hover {
   }
   .hero-art {
     position: absolute;
-    left: -75px;
+    inset-inline-end: -75px;
     top: 17px;
     transform: scale(0.62);
     width: 300px;
     opacity: 0.8;
   }
   .hero-core {
-    left: 125px;
+    inset-inline-end: 125px;
   }
   .inventory-float {
     top: 35px;
-    left: 18px;
+    inset-inline-end: 18px;
     opacity: 0.7;
   }
   .finance-float {
     bottom: 20px;
-    right: -45px;
+    inset-inline-start: -45px;
   }
   .hero-rings {
     box-shadow: 0 0 0 40px #ffffff02;
   }
   .float-mini {
-    left: 60px;
+    inset-inline-end: 60px;
     bottom: -2px;
   }
   .banner-tag {
@@ -2987,7 +2991,7 @@ tbody tr:hover {
     font-size: 8px;
   }
   .demo-banner > .btn {
-    margin-right: 40px;
+    margin-inline-start: 40px;
     font-size: 9px;
   }
   .page-footer {
@@ -3013,7 +3017,7 @@ tbody tr:hover {
     line-height: 1.8;
   }
   .feature-card > .icon {
-    left: 13px;
+    inset-inline-end: 13px;
     top: 20px;
     width: 13px;
     height: 13px;
@@ -3285,7 +3289,7 @@ tbody tr:hover {
     font-size: 17px;
   }
   .pos-product .round-plus {
-    left: 14px;
+    inset-inline-end: 14px;
     bottom: 15px;
     width: 25px;
     height: 25px;
@@ -3332,8 +3336,8 @@ tbody tr:hover {
   }
   #toasts {
     bottom: 17px;
-    left: 15px;
-    right: 15px;
+    inset-inline-end: 15px;
+    inset-inline-start: 15px;
     align-items: center;
   }
 }
@@ -3362,7 +3366,7 @@ tbody tr:hover {
   }
   #print-area {
     display: block !important;
-    direction: rtl;
+    direction: inherit;
   }
   .print-report-header {
     border-bottom: 2px solid #345b41;
@@ -3475,7 +3479,7 @@ tbody tr:hover {
   margin-top: 15px;
 }
 .welcome-banner h2 em {
-  margin-right: 0.25em;
+  margin-inline-start: 0.25em;
 }
 .table-scroll table small {
   font-size: 8px;
@@ -3483,5 +3487,97 @@ tbody tr:hover {
 @media (max-width: 780px) {
   .btn.menu-toggle {
     display: inline-flex;
+  }
+}
+
+/* Direction follows the chosen interface language; business values keep their own text. */
+html[dir="ltr"] .nav-chev,
+html[dir="ltr"] .user-card > .icon,
+html[dir="ltr"] .breadcrumbs .icon,
+html[dir="ltr"] .module-card-link > .icon,
+html[dir="ltr"] .attention-list > a > .icon {
+  transform: none;
+}
+html[dir="ltr"] .hero-link > .icon,
+html[dir="ltr"] .module-card-top > .icon,
+html[dir="ltr"] .feature-card > .icon,
+html[dir="ltr"] .report-card > .icon,
+html[dir="ltr"] #auth-form > button > .icon {
+  transform: rotate(180deg);
+}
+.language-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid #dfe7e1;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--green);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.language-toggle:hover {
+  background: #edf5ef;
+  border-color: #91ae9b;
+}
+.auth-language {
+  position: absolute;
+  inset-block-start: 20px;
+  inset-inline-end: 25px;
+  z-index: 2;
+}
+html[dir="ltr"] .hero-art {
+  transform-origin: right center;
+}
+html[lang="en"] .welcome-banner h2 br {
+  display: initial;
+}
+html[lang="en"] .auth-story h1 em {
+  margin-inline-start: 0.2em;
+}
+@media (max-width: 780px) {
+  html[dir="ltr"] .sidebar {
+    transform: translateX(-100%);
+  }
+  html[dir="ltr"] .menu-open .sidebar {
+    transform: translateX(0);
+  }
+  .breadcrumbs {
+    min-width: 0;
+  }
+  .topbar-tools {
+    flex-shrink: 0;
+  }
+  .auth-panel {
+    padding-block-start: 74px;
+  }
+  .auth-language {
+    inset-block-start: 20px;
+  }
+}
+@media (max-width: 560px) {
+  .language-toggle {
+    padding-inline: 8px;
+    font-size: 10px;
+  }
+  .breadcrumbs > strong {
+    max-width: 105px;
+  }
+  .page-heading,
+  .module-intro > div,
+  .module-card,
+  .feature-card,
+  .report-card > span {
+    min-width: 0;
+  }
+  html[lang="en"] .welcome-banner h2 {
+    font-size: 23px;
+  }
+  html[lang="en"] .welcome-banner p {
+    max-width: 200px;
   }
 }
