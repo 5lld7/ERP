@@ -42,7 +42,7 @@ def ensure_ready():
 
 
 class handler(Handler):
-    def handle_request(self, method):
+    def dispatch_request(self, method):
         url = urlsplit(self.path)
         params = parse_qs(url.query, keep_blank_values=True)
         route = params.pop('erp_path', [None])[0]
@@ -53,4 +53,4 @@ class handler(Handler):
             ensure_ready()
         except sqlite3.Error:
             return self.respond({'error': 'إعداد قاعدة البيانات الدائمة غير مكتمل أو الاتصال غير متاح. راجع متغيرات Vercel.'}, 503)
-        return super().handle_request(method)
+        return super().dispatch_request(method)

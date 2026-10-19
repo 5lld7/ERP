@@ -86,18 +86,19 @@ class Handler(BaseHTTPRequestHandler):
         return {'Set-Cookie':f'erp_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200{secure}'}
 
     def do_GET(self):
-        self.handle_request('GET')
+        self.dispatch_request('GET')
 
     def do_POST(self):
-        self.handle_request('POST')
+        self.dispatch_request('POST')
 
     def do_PUT(self):
-        self.handle_request('PUT')
+        self.dispatch_request('PUT')
 
     def do_DELETE(self):
-        self.handle_request('DELETE')
+        self.dispatch_request('DELETE')
 
-    def handle_request(self,method):
+    def dispatch_request(self,method):
+        # Vercel's runtime wrapper reserves handle_request() without arguments.
         db=None
         try:
             url=urlsplit(self.path)

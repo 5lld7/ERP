@@ -20,6 +20,24 @@ from api import index
 from database import Connection, remote_settings
 
 
+class RuntimeHandler(index.handler):
+    """Match Vercel's wrapper, which owns handle_request() with no arguments.
+
+    See vercel_runtime.vc_init: its handler dispatches to our do_* methods.
+    """
+    def handle_one_request(self):
+        self.raw_requestline = self.rfile.readline(65537)
+        if not self.raw_requestline:
+            self.close_connection = True
+            return
+        if self.parse_request():
+            self.handle_request()
+
+    def handle_request(self):
+        getattr(self, 'do_' + self.command)()
+        self.wfile.flush()
+
+
 class AdapterCase(unittest.TestCase):
     def test_settings_require_tls_and_no_embedded_credentials(self):
         for url in ('http://example.com','file:///tmp/unsafe','https://user:pass@example.com','libsql://db.turso.io?tls=0'):
@@ -61,7 +79,7 @@ class VercelHandlerCase(unittest.TestCase):
         cls.setup_token=secrets.token_urlsafe(32)
         cls.environment=patch.dict(os.environ,{'ERP_DATABASE_URL':'','ERP_DATABASE_TOKEN':'','ERP_SETUP_TOKEN':cls.setup_token,'ERP_DB_DRIVER':'libsql','VERCEL':'','ERP_COOKIE_SECURE':'0'})
         cls.environment.start()
-        cls.httpd=ThreadingHTTPServer(('127.0.0.1',0),index.handler)
+        cls.httpd=ThreadingHTTPServer(('127.0.0.1',0),RuntimeHandler)
         cls.thread=threading.Thread(target=cls.httpd.serve_forever,daemon=True)
         cls.thread.start()
         cls.base=f'http://127.0.0.1:{cls.httpd.server_address[1]}'
