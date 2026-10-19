@@ -1,5 +1,6 @@
 """Vercel's supported BaseHTTPRequestHandler entrypoint."""
 import os
+import logging
 import sqlite3
 import sys
 import threading
@@ -9,13 +10,27 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import erp
-from database import DatabaseUnavailable, remote_settings
+from database import DatabaseUnavailable, remote_settings, safe_database_detail
 from server import Handler
 
 os.umask(0o077)
 
 _ready = False
 _lock = threading.Lock()
+LOG = logging.getLogger('erp.startup')
+
+
+def startup_step(stage, operation):
+    try:
+        return operation()
+    except sqlite3.Error as exc:
+        code = exc.code if isinstance(exc, DatabaseUnavailable) else {
+            'connect': 'DATABASE_CONNECTION', 'read_version': 'DATABASE_SCHEMA',
+            'initialize_schema': 'DATABASE_INITIALIZE',
+        }[stage]
+        detail = exc.diagnostic if isinstance(exc, DatabaseUnavailable) else safe_database_detail(exc)
+        LOG.error('ERP startup failed: stage=%s code=%s detail=%s', stage, code, detail)
+        raise
 
 STARTUP_ERRORS = {
     'DATABASE_URL_MISSING': 'متغير ERP_DATABASE_URL غير موجود في هذا النشر. أضفه إلى Production ثم أعد النشر.',
@@ -49,13 +64,13 @@ def ensure_ready():
         with _lock:
             if not _ready:
                 try:
-                    db = erp.connect()
+                    db = startup_step('connect', erp.connect)
                 except DatabaseUnavailable:
                     raise
                 except sqlite3.Error:
                     raise DatabaseUnavailable('DATABASE_CONNECTION') from None
                 try:
-                    version = db.execute('PRAGMA user_version').fetchone()[0]
+                    version = startup_step('read_version', lambda: db.execute('PRAGMA user_version').fetchone()[0])
                 except DatabaseUnavailable:
                     raise
                 except sqlite3.Error:
@@ -66,7 +81,7 @@ def ensure_ready():
                     raise DatabaseUnavailable('DATABASE_VERSION')
                 if version != erp.SCHEMA_VERSION:
                     try:
-                        erp.initialize()
+                        startup_step('initialize_schema', erp.initialize)
                     except DatabaseUnavailable:
                         raise
                     except sqlite3.Error:

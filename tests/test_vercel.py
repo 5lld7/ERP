@@ -17,7 +17,7 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import erp
 from api import index
-from database import Connection, DatabaseUnavailable, checked, remote_settings
+from database import Connection, DatabaseUnavailable, checked, remote_settings, safe_database_detail
 
 
 class RuntimeHandler(index.handler):
@@ -39,6 +39,15 @@ class RuntimeHandler(index.handler):
 
 
 class AdapterCase(unittest.TestCase):
+    def test_startup_detail_redacts_tokens_and_endpoints(self):
+        from urllib.parse import quote
+        token = secrets.token_urlsafe(32) + '/+='
+        with patch.dict(os.environ, {'ERP_DATABASE_TOKEN':token}):
+            detail = safe_database_detail('stream expired\n ' + token + ' ' + quote(token, safe='') + ' https://private-host/query Bearer different-secret eyJabc.def.ghi')
+        self.assertIn('stream expired', detail)
+        for value in (token, quote(token, safe=''), 'private-host', 'different-secret', 'eyJabc.def.ghi', '\n'):
+            self.assertNotIn(value, detail)
+
     def test_sdk_diagnostics_never_expose_connection_details(self):
         for message, code in (
             ('401 Unauthorized', 'DATABASE_AUTH'),
@@ -190,11 +199,15 @@ class VercelHandlerCase(unittest.TestCase):
         old_ready = index._ready
         index._ready = False
         try:
-            with patch.object(erp, 'connect', side_effect=sqlite3.OperationalError(secret)):
-                code, data, _ = self.request('/api/auth')
+            with patch.dict(os.environ, {'ERP_DATABASE_TOKEN':secret}), patch.object(erp, 'connect', side_effect=sqlite3.OperationalError('stream expired ' + secret)):
+                with self.assertLogs('erp.startup', level='ERROR') as logs:
+                    code, data, _ = self.request('/api/auth')
             self.assertEqual(code, 503)
             self.assertEqual(data['code'], 'DATABASE_CONNECTION')
             self.assertNotIn(secret, json.dumps(data))
+            self.assertIn('stage=connect', logs.output[0])
+            self.assertIn('stream expired', logs.output[0])
+            self.assertNotIn(secret, logs.output[0])
         finally:
             index._ready = old_ready
 

@@ -4,14 +4,30 @@ Remote connections go to Turso directly; no writable deployment filesystem or
 embedded replica is used. Explicit transactions remain on a single connection.
 """
 import os
+import json
+import re
 import sqlite3
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
+
+
+def safe_database_detail(message):
+    """Redact credentials and endpoints before a startup diagnostic is logged."""
+    message = str(message)
+    for name, value in os.environ.items():
+        if value and (name == 'ERP_DATABASE_URL' or name.endswith(('_TOKEN', '_SECRET', '_PASSWORD', '_KEY'))):
+            for form in (value, json.dumps(value)[1:-1], quote(value, safe='')):
+                message = message.replace(form, '[redacted]')
+    message = re.sub(r'(?:https?|libsql)://[^\s`\"<>]+', '[endpoint]', message, flags=re.I)
+    message = re.sub(r'\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', '[token]', message)
+    message = re.sub(r'Bearer\s+[^\s`\"<>]+', 'Bearer [token]', message, flags=re.I)
+    return ' '.join(message.split())[:600]
 
 
 class DatabaseUnavailable(sqlite3.OperationalError):
-    """A fixed diagnostic code; never retain SDK error text or credentials."""
-    def __init__(self, code):
+    """A public fixed code and a redacted, server-only startup diagnostic."""
+    def __init__(self, code, diagnostic=''):
         self.code = code
+        self.diagnostic = safe_database_detail(diagnostic)
         super().__init__(code)
 
 
@@ -26,7 +42,8 @@ def checked(operation, *args, **kwargs):
     try:
         return operation(*args, **kwargs)
     except ValueError as exc:
-        # SDK errors can contain connection details; never return or log them.
+        # SDK errors can contain credentials. Only retain a redacted diagnostic;
+        # the API exposes fixed codes, never the SDK text.
         message = str(exc).lower()
         if any(marker in message for marker in (
             'unique constraint', 'foreign key constraint', 'check constraint',
@@ -34,10 +51,10 @@ def checked(operation, *args, **kwargs):
         )):
             raise sqlite3.IntegrityError('Database constraint failed') from None
         if any(marker in message for marker in ('401', 'unauthorized', 'unauthenticated', 'invalid token', 'token expired', 'jwt expired', 'jwt_invalid', 'jwt_expired', 'authentication failed')):
-            raise DatabaseUnavailable('DATABASE_AUTH') from None
+            raise DatabaseUnavailable('DATABASE_AUTH', str(exc)) from None
         if any(marker in message for marker in ('403', 'forbidden', 'read-only', 'readonly')):
-            raise DatabaseUnavailable('DATABASE_PERMISSION') from None
-        raise DatabaseUnavailable('DATABASE_CONNECTION') from None
+            raise DatabaseUnavailable('DATABASE_PERMISSION', str(exc)) from None
+        raise DatabaseUnavailable('DATABASE_CONNECTION', str(exc)) from None
 
 
 class Cursor:
