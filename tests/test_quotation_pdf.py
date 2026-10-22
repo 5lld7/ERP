@@ -57,7 +57,7 @@ class QuotationPDFCase(unittest.TestCase):
                 self.assertEqual(len(re.findall(rb'/Type /Page\b', content)), 1)
 
     def test_client_pdf_includes_quote_customer_prices_and_currency_only(self):
-        for language, title in (('ar', 'عرض سعر معاينة'), ('en', 'Inspection quotation')):
+        for language, title in (('ar', 'عرض سعر'), ('en', 'Quotation')):
             with self.subTest(language=language):
                 text = self.extract(render_quotation(self.document, self.settings, language))
                 for public in (title, 'Serviq', 'أحمد', 'Ahmed Customer', 'QUO-TEST-101',

@@ -18,21 +18,21 @@ INK = (47, 63, 82)
 
 LABELS = {
     'ar': {
-        'title': 'عرض سعر معاينة', 'customer': 'مقدم إلى', 'number': 'رقم العرض',
+        'title': 'عرض سعر', 'customer': 'مقدم إلى', 'number': 'رقم العرض',
         'date': 'تاريخ العرض', 'appointment': 'موعد المعاينة', 'location': 'موقع المعاينة',
         'item': 'الصنف / الخدمة', 'quantity': 'الكمية', 'price': 'سعر الوحدة',
         'amount': 'الإجمالي', 'subtotal': 'المجموع قبل الخصم', 'discount': 'الخصم',
         'tax': 'الضريبة', 'total': 'الإجمالي المستحق', 'tax_number': 'الرقم الضريبي',
-        'currency': 'العملة', 'page': 'صفحة', 'footer': 'عرض سعر معاينة — لا يمثل فاتورة ضريبية',
+        'currency': 'العملة', 'page': 'صفحة', 'footer': 'عرض سعر — لا يمثل فاتورة ضريبية',
         'service_method': 'طريقة عمل الخدمة',
     },
     'en': {
-        'title': 'Inspection quotation', 'customer': 'Prepared for', 'number': 'Quotation no.',
+        'title': 'Quotation', 'customer': 'Prepared for', 'number': 'Quotation no.',
         'date': 'Quotation date', 'appointment': 'Inspection appointment', 'location': 'Inspection location',
         'item': 'Item / service', 'quantity': 'Qty', 'price': 'Unit price',
         'amount': 'Amount', 'subtotal': 'Subtotal', 'discount': 'Discount',
         'tax': 'Tax', 'total': 'Grand total', 'tax_number': 'Tax registration no.',
-        'currency': 'Currency', 'page': 'Page', 'footer': 'Inspection quotation — this is not a tax invoice',
+        'currency': 'Currency', 'page': 'Page', 'footer': 'Quotation — this is not a tax invoice',
         'service_method': 'Service delivery method',
     },
 }

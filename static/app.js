@@ -34,6 +34,9 @@ const state = {
   expandedModule: undefined,
   sidebarModule: undefined,
   notificationsOpen: false,
+  appointmentFilters: {},
+  appointmentConversion: null,
+  appointmentQueue: [],
 };
 const icons = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.7"/><rect x="14" y="3" width="7" height="7" rx="1.7"/><rect x="3" y="14" width="7" height="7" rx="1.7"/><rect x="14" y="14" width="7" height="7" rx="1.7"/>',
@@ -178,6 +181,7 @@ const modules = {
           "report_sales",
           "report_sales_summary",
           "report_inspections",
+          "report_appointment_services",
           "report_best_customers",
           "report_best_products",
         ],
@@ -219,7 +223,8 @@ const reportNames = {
   tax: "التقرير الضريبي",
   sales: "المبيعات اليومية والشهرية والفروع",
   purchases: "تقرير المشتريات",
-  inspections: "تقرير المعاينات",
+  inspections: "تقرير عروض الأسعار",
+  appointment_services: "تقرير حالات الخدمة والحسابات",
   best_products: "الأصناف الأكثر مبيعًا وربحيتها",
   customer_balances: "أرصدة العملاء",
   supplier_balances: "أرصدة الموردين",
@@ -322,7 +327,13 @@ const colNames = {
   username: "اسم الدخول",
   role: "الصلاحية",
   active: "نشط",
-  progress: "مرحلة المعاينة",
+  progress: "مرحلة عرض السعر",
+  service_status: "حالة الخدمة",
+  appointments: "عدد المواعيد",
+  completed: "المواعيد المكتملة",
+  quotations: "عروض الأسعار",
+  invoiced: "الفواتير المرحلة",
+  net_revenue: "صافي الإيراد قبل الضريبة",
   appointment_date: "موعد المعاينة",
   location: "موقع المعاينة",
   size: "الحجم (بايت)",
@@ -452,6 +463,8 @@ function modal(title, content, wide = false) {
 }
 function closeModal() {
   state.notificationsOpen = false;
+  state.appointmentConversion = null;
+  state.appointmentQueue = [];
   if ($("#modal-root").innerHTML) {
     setHTML($("#modal-root"), "");
     document.body.classList.remove("has-modal");
@@ -469,7 +482,7 @@ function inputField(f, value) {
       f.type === "ref"
         ? (state.boot.refs[f.ref] || []).map((o) => ({
             value: o.id,
-            label: f.ref === "accounts" ? accountLabel(o.name, o) : f.ref === "units" ? unitLabel(o) : o.name,
+            label: f.ref === "accounts" ? accountLabel(o.name, o) : f.ref === "units" ? unitLabel(o) : f.ref === "services" && o.service_category ? t(o.service_category) + " — " + o.name : o.name,
           }))
         : f.options.map((o) => ({
             value: typeof o === "object" ? o.value : o,
@@ -516,7 +529,7 @@ function shell() {
       .filter(([key]) => allowed(key))
       .map(
         ([key, m]) =>
-          `<a class="nav-item ${module === key ? "active" : ""}" data-module="${key}" aria-expanded="${state.expandedModule === key}" aria-controls="sidebar-${key}" href="#/${key}">${icon(m.icon)}<span>${m.name}</span>${icon("chevron", "nav-chev")}</a>${
+          `<div class="nav-module-row"><a class="nav-item ${module === key ? "active" : ""}" data-module-link="${key}" href="#/${key}">${icon(m.icon)}<span>${m.name}</span></a><button type="button" class="module-toggle" data-action="toggle-module" data-module="${key}" aria-label="${esc(t('فتح أو إغلاق القسم'))}: ${esc(t(m.name))}" aria-expanded="${state.expandedModule === key}" aria-controls="sidebar-${key}">${icon("chevron", "nav-chev")}</button></div>${
             `<div class="subnav" id="sidebar-${key}" ${state.expandedModule === key ? "" : 'hidden style="display:none"'}>${m.groups
                   .flatMap((g) => g[1])
                   .filter(canPage)
@@ -538,7 +551,7 @@ function pageHeader(titleText, subtitle, actions = "", titleIsHTML = false) {
 async function renderPage() {
   if (!state.boot) return;
   state.page = decodeURIComponent(
-    location.hash.replace(/^#\//, "") || "dashboard",
+    location.hash.replace(/^#\//, "").split('?')[0] || "dashboard",
   );
   state.search = "";
   const id = ++state.requestId;
@@ -552,6 +565,7 @@ async function renderPage() {
     let html;
     if (state.page === "dashboard") html = await dashboardPage();
     else if (modules[state.page]) html = modulePage(state.page);
+    else if (state.page === "appointments") html = await appointmentsPage();
     else if (state.boot.resources[state.page])
       html = await resourcePage(state.page);
     else if (state.page.startsWith("doc_"))
@@ -634,7 +648,7 @@ async function dashboardPage() {
            .join("، "),
        )}</small></span>${icon("chevron")}</a>`
      : ""
- }${d.pending_inspections !== undefined ? `<a href="#/doc_inspection"><span class="attention-icon blue">${icon("file")}</span><span><b>${numeric(d.pending_inspections)} معاينات بانتظار التحويل</b><small>تابع عروض الأسعار وفرص المبيعات</small></span>${icon("chevron")}</a>` : ""}${d.pending_leaves !== undefined ? `<a href="#/leaves"><span class="attention-icon purple">${icon("users")}</span><span><b>${numeric(d.pending_leaves)} طلبات إجازة للمراجعة</b><small>نظّم حضور فريقك واستحقاقاته</small></span>${icon("chevron")}</a>` : ""}${d.expiring?.length ? `<a href="#/products"><span class="attention-icon red">${icon("clock")}</span><span><b>${d.expiring.length} أصناف قريبة من انتهاء الصلاحية</b><small>راجع التواريخ قبل البيع</small></span>${icon("chevron")}</a>` : ""}${!d.chart && d.cash !== undefined ? `<a href="#/report_cashflow"><span class="attention-icon green">${icon("wallet")}</span><span><b>${numeric(d.cash)} السيولة المتاحة</b><small>الصندوق والبنك</small></span>${icon("chevron")}</a>` : ""}</div></article></section>
+ }${d.pending_inspections !== undefined ? `<a href="#/doc_inspection"><span class="attention-icon blue">${icon("file")}</span><span><b>${numeric(d.pending_inspections)} عروض أسعار بانتظار التحويل</b><small>تابع عروض الأسعار وفرص المبيعات</small></span>${icon("chevron")}</a>` : ""}${d.pending_leaves !== undefined ? `<a href="#/leaves"><span class="attention-icon purple">${icon("users")}</span><span><b>${numeric(d.pending_leaves)} طلبات إجازة للمراجعة</b><small>نظّم حضور فريقك واستحقاقاته</small></span>${icon("chevron")}</a>` : ""}${d.expiring?.length ? `<a href="#/products"><span class="attention-icon red">${icon("clock")}</span><span><b>${d.expiring.length} أصناف قريبة من انتهاء الصلاحية</b><small>راجع التواريخ قبل البيع</small></span>${icon("chevron")}</a>` : ""}${!d.chart && d.cash !== undefined ? `<a href="#/report_cashflow"><span class="attention-icon green">${icon("wallet")}</span><span><b>${numeric(d.cash)} السيولة المتاحة</b><small>الصندوق والبنك</small></span>${icon("chevron")}</a>` : ""}</div></article></section>
  <section class="panel"><header class="panel-header"><div><h2>آخر الحركات</h2><p>أحدث المستندات في أقسام شركتك</p></div><a class="text-link" href="#/reports">كل التقارير ${icon("arrow")}</a></header>${d.recent_documents.length ? table(d.recent_documents, ["number", "party", "kind", "date", "status", "total"], (r) => button(icon("eye"), "view-doc", "icon-button", `data-id="${r.id}" aria-label="عرض المستند"`)) : empty("مساحة أعمالك جاهزة", "أضف الأصناف والعملاء، ثم سجّل أول عملية.")}</section>
  ${state.boot.user.role === "admin" && d.products === 0 ? `<aside class="demo-banner"><span class="icon-tile green">${icon("spark")}</span><div><b>اكتشف النظام ببيانات تجريبية</b><p>أصناف وعملاء ومبيعات وموظفون؛ لتجربة دورة العمل قبل إضافة بيانات شركتك.</p></div>${button("تحميل بيانات تجريبية", "demo", "secondary")}</aside>` : ""}`;
 }
@@ -660,6 +674,7 @@ const chartNames = {
   "2000": "الالتزامات", "2100": "الموردون", "2200": "ضريبة مخرجات", "2300": "الرواتب المستحقة",
   "2400": "مجمع الإهلاك", "3000": "حقوق الملكية", "3100": "رأس المال والأرصدة الافتتاحية",
   "4000": "الإيرادات", "4100": "إيرادات المبيعات", "4200": "إيرادات أخرى",
+  "4111": "إيرادات تنفيذ الخدمات", "4112": "إيرادات المعاينات", "4113": "إيرادات المتابعة", "4114": "إيرادات إعادة العمل",
   "5000": "المصروفات", "5100": "تكلفة البضاعة المباعة", "5200": "الرواتب والأجور",
   "5300": "مصروفات تشغيلية", "5400": "مصروف الإهلاك", "5500": "فروق الجرد والتالف",
 };
@@ -710,7 +725,7 @@ function display(value, key, spec, row = null) {
     document: "المستندات", payment: "سند قبض / صرف", payroll: "مسيرات الرواتب",
     loan: "سلف الموظفين", depreciation: "احتساب إهلاك الأصول", manual: "قيد يومية يدوي",
   }[value] || erpKind(value)));
-  if (["progress", "type"].includes(key)) return esc(t(erpKind(value)));
+  if (["progress", "type", "service_status", "service_category"].includes(key)) return esc(t(erpKind(value)));
   if (key === "entity") return esc(t(title(value)));
   if (key === "action") return esc(t(value));
   if (/^(?:\d{4}-\d{2}-\d{2})$/.test(String(value)) && (f?.type === "date" || key === "date" || key.endsWith("_date")))
@@ -760,8 +775,66 @@ function resourceModal(name, id = null) {
     row = id ? state.rows.find((r) => r.id === id) : {};
   modal(
     `${id ? "تعديل" : "إضافة"} — ${spec.label}`,
-    `<form id="resource-form" data-resource="${name}" data-id="${id || ""}"><div class="modal-body"><div class="form-grid">${spec.fields.map((f) => inputField(f, row?.[f.key] ?? (f.type === "date" && f.required ? dateNow() : f.key === "status" ? f.options?.[0] : f.key === "classification" ? "عادي" : f.key === "leave_balance" ? state.boot.settings.leave_days : ["money", "number"].includes(f.type) ? 0 : ""))).join("")}</div>${name === "employees" ? employeeUploadField(false) : ""}<div class="form-error" role="alert"></div></div>${modalFooter()}</form>`,
+    `<form id="resource-form" data-resource="${name}" data-id="${id || ""}"><div class="modal-body"><div class="form-grid">${spec.fields.map((f) => inputField((name === "appointments" && f.key === "service_id") || (name === "services" && f.key === "service_category") ? {...f,required:true} : f, row?.[f.key] ?? (f.type === "date" && f.required ? dateNow() : f.key === "status" ? f.options?.[0] : f.key === "classification" ? "عادي" : f.key === "leave_balance" ? state.boot.settings.leave_days : ["money", "number"].includes(f.type) ? 0 : ""))).join("")}</div>${name === "employees" ? employeeUploadField(false) : ""}<div class="form-error" role="alert"></div></div>${modalFooter()}</form>`,
   );
+}
+const appointmentStatuses = {scheduled:"لم تتم المعاينة",assigned:"مسندة لموظف",completed:"تمت المعاينة",quoted:"محولة لعرض سعر",invoiced:"محولة لفاتورة مبيعات",not_executed:"تمت المعاينة ولم يتم التنفيذ",cancelled:"ملغاة"};
+function appointmentSelect(name, label, options, value="") {
+  return inputField({key:name,label,type:"select",options:[{value:"",label:"الكل"},...options.map(([value,label])=>({value,label}))]}, value);
+}
+async function appointmentsPage() {
+  if (state.appointmentHash !== location.hash) {
+    state.appointmentFilters = Object.fromEntries(new URLSearchParams(location.hash.split('?')[1] || ''));
+    state.appointmentHash = location.hash;
+  }
+  const data = await api(`appointments?${new URLSearchParams(state.appointmentFilters)}`), f=state.appointmentFilters;
+  state.rows=data.items;
+  const write=allowed("sales",true), options=Object.entries(appointmentStatuses);
+  return `${pageHeader("حجز موعد", "تابع المواعيد والموظفين وحالة الخدمة، وحوّل الموعد إلى عرض سعر أو فاتورة.", write ? button(`${icon("plus")} حجز موعد`,"new-resource","primary",'data-resource="appointments"') : "")}
+  <section class="appointments-alert" role="status"><span>${icon("calendar")} <strong>مواعيد اليوم: ${numeric(data.summary.today_count)}</strong> <span>بانتظار الإتمام: ${numeric(data.summary.today_pending_count)}</span> <span>معاينات اليوم: ${numeric(data.summary.today_inspection_count)}</span> <small>${esc(dateLabel(data.today))}</small></span><div>${button("عرض مواعيد اليوم","appointments-today","secondary")}${button("معاينات اليوم","appointments-inspections-today","secondary")}</div></section>
+  <section class="panel"><form id="appointment-filter" class="appointment-filters">${appointmentSelect("day","الموعد",[["today","اليوم"]],f.day)}${appointmentSelect("status","حالة الموعد",[["pending","لم تتم"],["done","تمت"],...options],f.status)}${appointmentSelect("service_status","حالة الخدمة",["تنفيذ","معاينة","متابعة","إعادة العمل"].map(s=>[s,s]),f.service_status)}${appointmentSelect("service_category","نوع الخدمة",[["مكافحة حشرات","مكافحة حشرات"],["تنظيف","تنظيف"]],f.service_category)}${inputField({key:"employee_id",label:"الموظف المسند إليه",type:"ref",ref:"appointment_employees"},f.employee_id)}${inputField({key:"start_date",label:"من تاريخ",type:"date"},f.start_date)}${inputField({key:"end_date",label:"إلى تاريخ",type:"date"},f.end_date)}<button type="submit" class="btn primary">${icon("filter")} تطبيق</button>${button("مسح الفلاتر","appointments-clear","secondary")}</form>
+  ${write ? `<div class="appointment-bulkbar"><b><span id="appointment-selection-count">0</span> محدد</b>${button("إسناد لموظف","appointment-bulk","secondary",'data-kind="assign"')}${button("تمت المعاينة","appointment-bulk","secondary",'data-kind="complete"')}${button("تحويل لعرض سعر","appointment-bulk","secondary",'data-kind="quotation"')}${state.boot.kinds.sale ? button("تحويل لفاتورة مبيعات","appointment-bulk","secondary",'data-kind="invoice"') : ""}${button("لم يتم التنفيذ","appointment-bulk","secondary",'data-kind="not_executed"')}${button("إلغاء الموعد","appointment-bulk","secondary",'data-kind="cancel"')}</div>` : ""}
+  ${tableTools(data.items.length,"بحث بالعميل أو الهاتف أو الخدمة…")}${data.items.length ? `<div class="table-scroll"><table class="appointment-table"><thead><tr>${write ? '<th><input type="checkbox" id="appointment-select-all" aria-label="تحديد كل المواعيد الظاهرة"></th>' : ""}${["اسم العميل","الموعد","حالة الخدمة","الخدمة","الموظف المسند إليه","حالة الموعد","الإجراءات"].map(s=>`<th>${esc(t(s))}</th>`).join("")}</tr></thead><tbody>${data.items.map(r=>`<tr data-search="${esc([r.customer_name,r.phone,r.service_name,r.assigned_employee_name].join(' '))}" data-appointment-id="${r.id}">${write ? `<td><input type="checkbox" class="appointment-select" value="${r.id}" aria-label="${esc(t('تحديد الموعد'))} ${esc(r.customer_name)}"></td>` : ""}<td><strong>${esc(r.customer_name)}</strong><small class="block muted">${esc(r.phone)}</small><small class="block muted">${esc(r.address)}</small></td><td>${esc(dateLabel(r.date))}<small class="block muted">${esc(r.time)}</small></td><td>${esc(t(r.service_status))}</td><td>${esc(r.service_name || "—")}<small class="block muted">${esc(t(r.service_category || ""))}</small></td><td>${esc(r.assigned_employee_name || "—")}</td><td>${badge(appointmentStatuses[r.status] || r.status)}</td><td><div class="row-actions">${r.quotation_id ? button("عرض السعر","view-doc","secondary",`data-id="${r.quotation_id}"`) : ""}${r.linked_invoice_id && state.boot.kinds.sale ? button("الفاتورة","view-doc","secondary",`data-id="${r.linked_invoice_id}"`) : ""}${write ? `${!r.quotation_id && !r.linked_invoice_id ? button(icon("edit"),"edit-resource","icon-button",`data-resource="appointments" data-id="${r.id}" aria-label="تعديل"`) : ""}<select class="appointment-row-action" data-id="${r.id}" aria-label="إجراء على الموعد"><option value="">${esc(t("اختر إجراء"))}</option>${[["assign","إسناد لموظف"],["complete","تمت المعاينة"],["quotation","تحويل لعرض سعر"],...(state.boot.kinds.sale ? [["invoice","تحويل لفاتورة مبيعات"]] : []),["not_executed","تمت المعاينة ولم يتم التنفيذ"],["cancel","إلغاء الموعد"],["reopen","إعادة فتح الموعد"]].map(([v,l])=>`<option value="${v}">${esc(t(l))}</option>`).join("")}</select>` : ""}</div></td></tr>`).join("")}</tbody></table></div>` : empty("لا توجد مواعيد مطابقة","غيّر الفلاتر أو أضف موعدًا جديدًا.")}</section>${state.boot.reports.appointment_services ? '<p><a class="text-link" href="#/report_appointment_services">تقرير حالات الخدمة والحسابات</a></p>' : ""}`;
+}
+function selectedAppointments() {
+  return $$(".appointment-select:checked").filter(el=>!el.closest('tr').classList.contains('hidden')).map(el=>Number(el.value));
+}
+async function appointmentAction(ids, action) {
+  if (!ids.length) throw new Error("حدد موعدًا واحدًا على الأقل");
+  if (["quotation","invoice"].includes(action)) {
+    state.appointmentQueue=[...ids];state.appointmentKind=action;
+    return await nextAppointmentConversion();
+  }
+  if (action==="assign") {
+    state.assignmentIds=ids;
+    return modal("إسناد المواعيد لموظف",`<form id="appointment-assignment"><div class="modal-body">${inputField({key:"employee_id",label:"الموظف المسند إليه",type:"ref",ref:"appointment_employees",required:true})}<div class="form-error" role="alert"></div></div>${modalFooter()}</form>`);
+  }
+  const perform=async()=>{await api("appointments/actions",{method:"POST",body:{ids,action}});await renderPage();window.ServiqNotifications?.refresh();toast("تم تحديث المواعيد");};
+  if (["cancel","not_executed"].includes(action)) return confirmAction(action==="cancel" ? "إلغاء الموعد" : "لم يتم التنفيذ","سيتم تطبيق الحالة على المواعيد المحددة دون حذف المستندات أو تغيير الحسابات.",perform);
+  await perform();
+}
+async function nextAppointmentConversion() {
+  const aid=state.appointmentQueue.shift();
+  if (!aid) return;
+  const booking=await api(`appointments/${aid}/${state.appointmentKind}`);
+  const existing=state.appointmentKind==="quotation" ? booking.quotation_id : booking.linked_invoice_id;
+  if (existing) {
+    if (state.appointmentQueue.length) return await nextAppointmentConversion();
+    await viewDocument(existing);state.appointmentQueue=[];return;
+  }
+  let source=null;
+  if (state.appointmentKind==="invoice" && booking.quotation_id) source=await api(`documents/${booking.quotation_id}`);
+  await documentModal(state.appointmentKind==="invoice" ? "sale" : "inspection",source);
+  state.appointmentConversion={id:aid,kind:state.appointmentKind};
+  const form=$("#document-form"), customer=$("[name=customer_id]",form);
+  customer.required=Boolean(booking.customer_ambiguous);
+  customer.value=source?.customer_id || booking.suggested_customer_id || "";
+  if ($("[name=location]",form)) $("[name=location]",form).value=booking.address;
+  if ($("[name=appointment_date]",form)) $("[name=appointment_date]",form).value=booking.date;
+  const context=document.createElement('div');context.className="appointment-context";
+  context.textContent=t("من حجز الموعد:")+" "+booking.customer_name+" — "+booking.phone+" — "+booking.date+" "+booking.time+" — "+t(booking.service_status);
+  $(".modal-body",form).prepend(context);
+  if (!source && booking.service_id) {$("#line-product").value=String(booking.service_id);addLine(booking.service_id);}
 }
 async function documentsPage(kind) {
   state.rows = await api(`documents?kind=${kind}`);
@@ -931,8 +1004,8 @@ async function shareQuotation(id, buttonElement) {
     const shared = new URL(quote.url, location.origin);
     if (shared.origin !== location.origin || shared.pathname !== "/api/quotations/shared" || !shared.searchParams.get("token")) throw new Error("تعذر تجهيز رابط عرض السعر");
     const message = window.I18n.language === "en"
-      ? `Hello ${quote.customer_name},\nHere is your inspection quotation ${quote.number} from ${state.boot.settings.company_name}.\nTotal: ${numeric(quote.total)} ${currencyText(quote.currency)}\nDownload your PDF quotation (valid for 7 days):\n${shared.href}`
-      : `أهلًا ${quote.customer_name}،\nعرض سعر المعاينة ${quote.number} من ${state.boot.settings.company_name}.\nالإجمالي: ${numeric(quote.total)} ${currencyText(quote.currency)}\nتنزيل عرض السعر PDF (الرابط صالح لمدة 7 أيام):\n${shared.href}`;
+      ? `Hello ${quote.customer_name},\nHere is your quotation ${quote.number} from ${state.boot.settings.company_name}.\nTotal: ${numeric(quote.total)} ${currencyText(quote.currency)}\nDownload your PDF quotation (valid for 7 days):\n${shared.href}`
+      : `أهلًا ${quote.customer_name}،\nعرض السعر ${quote.number} من ${state.boot.settings.company_name}.\nالإجمالي: ${numeric(quote.total)} ${currencyText(quote.currency)}\nتنزيل عرض السعر PDF (الرابط صالح لمدة 7 أيام):\n${shared.href}`;
     const whatsapp = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
     if (popup && !popup.closed) {
       popup.location.replace(whatsapp);
@@ -952,7 +1025,7 @@ async function viewDocument(id) {
   const m = state.boot.kinds[d.kind][1];
   modal(
     d.number,
-    `<div class="modal-body printable" id="print-content"><div class="invoice-header"><div><h2>${esc(state.boot.settings.company_name)}</h2><p>${esc(state.boot.settings.company_address)}</p><p>الرقم الضريبي: ${esc(state.boot.settings.tax_number || "—")}</p></div><div><span class="eyebrow">${esc(t(d.kind === "inspection" ? "عرض سعر معاينة" : state.boot.kinds[d.kind][0]))}</span><h2 class="num">${esc(d.number)}</h2>${badge(d.status)}</div></div><div class="detail-grid"><div><small>التاريخ</small><b>${esc(dateLabel(d.date))}</b></div><div><small>${d.kind === "inspection" ? "العميل" : "العميل / المورد"}</small><b>${esc(d.customer || d.supplier || "—")}</b></div><div><small>المخزن</small><b>${esc(d.warehouse)}</b></div>${d.kind !== "inspection" ? `<div><small>الاستحقاق</small><b>${esc(dateLabel(d.due_date))}</b></div>` : ""}${d.kind === "inspection" ? `<div><small>مرحلة المعاينة</small><b>${esc(t(d.progress))}</b></div><div><small>موعد وموقع المعاينة</small><b>${esc(dateLabel(d.appointment_date || "—"))} — ${esc(d.location || "—")}</b></div>` : ""}${d.target_warehouse ? `<div><small>المخزن المستلم</small><b>${esc(d.target_warehouse)}</b></div>` : ""}</div>${table(d.lines, ["sku", "name", "quantity", "price", "total"])}<div class="invoice-summary detail-summary"><div><span>إجمالي الأصناف</span><b>${money(d.subtotal)}</b></div><div><span>خصم</span><b>${money(d.discount)}</b></div><div><span>الضريبة</span><b>${money(d.tax)}</b></div><div class="grand-total"><span>الإجمالي</span><b>${money(d.total)}</b></div>${d.kind !== "inspection" ? `<div><span>المدفوع / المتبقي</span><b>${money(d.paid)} / ${money(d.total - d.paid)}</b></div>` : ""}</div><p class="muted">${esc(d.note)}</p><p class="print-signatures">توقيع المستلم: __________________ &nbsp; توقيع المسؤول: __________________</p></div><footer class="modal-footer">${d.kind === "inspection" ? inspectionActions(id) : ""}${button(`${icon("print")} طباعة`, "print", d.kind === "inspection" ? "secondary" : "primary")}${d.status === "draft" && allowed(m, true) ? button("ترحيل المستند", "post-doc", "secondary", `data-id="${id}"`) : ""}${d.status === "posted" && ["inspection", "purchase_order", "sale", "purchase"].includes(d.kind) && allowed(m, true) && canConvertKind(d.kind) ? button(["sale", "purchase"].includes(d.kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة", "convert-doc", "secondary", `data-id="${id}"`) : ""}${["sale", "purchase", "sale_return", "purchase_return"].includes(d.kind) && d.status === "posted" && d.paid < d.total && allowed("accounting", true) ? button("تسجيل سداد", "pay-doc", "secondary", `data-id="${id}"`) : ""}</footer>`,
+    `<div class="modal-body printable" id="print-content"><div class="invoice-header"><div><h2>${esc(state.boot.settings.company_name)}</h2><p>${esc(state.boot.settings.company_address)}</p><p>الرقم الضريبي: ${esc(state.boot.settings.tax_number || "—")}</p></div><div><span class="eyebrow">${esc(t(d.kind === "inspection" ? "عرض سعر" : state.boot.kinds[d.kind][0]))}</span><h2 class="num">${esc(d.number)}</h2>${badge(d.status)}</div></div><div class="detail-grid"><div><small>التاريخ</small><b>${esc(dateLabel(d.date))}</b></div><div><small>${d.kind === "inspection" ? "العميل" : "العميل / المورد"}</small><b>${esc(d.customer || d.supplier || "—")}</b></div><div><small>المخزن</small><b>${esc(d.warehouse)}</b></div>${d.kind !== "inspection" ? `<div><small>الاستحقاق</small><b>${esc(dateLabel(d.due_date))}</b></div>` : ""}${d.kind === "inspection" ? `<div><small>مرحلة عرض السعر</small><b>${esc(t(d.progress))}</b></div><div><small>موعد وموقع المعاينة</small><b>${esc(dateLabel(d.appointment_date || "—"))} — ${esc(d.location || "—")}</b></div>` : ""}${d.target_warehouse ? `<div><small>المخزن المستلم</small><b>${esc(d.target_warehouse)}</b></div>` : ""}</div>${table(d.lines, ["sku", "name", "quantity", "price", "total"])}<div class="invoice-summary detail-summary"><div><span>إجمالي الأصناف</span><b>${money(d.subtotal)}</b></div><div><span>خصم</span><b>${money(d.discount)}</b></div><div><span>الضريبة</span><b>${money(d.tax)}</b></div><div class="grand-total"><span>الإجمالي</span><b>${money(d.total)}</b></div>${d.kind !== "inspection" ? `<div><span>المدفوع / المتبقي</span><b>${money(d.paid)} / ${money(d.total - d.paid)}</b></div>` : ""}</div><p class="muted">${esc(d.note)}</p><p class="print-signatures">توقيع المستلم: __________________ &nbsp; توقيع المسؤول: __________________</p></div><footer class="modal-footer">${d.kind === "inspection" ? inspectionActions(id) : ""}${button(`${icon("print")} طباعة`, "print", d.kind === "inspection" ? "secondary" : "primary")}${d.status === "draft" && allowed(m, true) ? button("ترحيل المستند", "post-doc", "secondary", `data-id="${id}"`) : ""}${d.status === "posted" && ["inspection", "purchase_order", "sale", "purchase"].includes(d.kind) && allowed(m, true) && canConvertKind(d.kind) ? button(["sale", "purchase"].includes(d.kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة", "convert-doc", "secondary", `data-id="${id}"`) : ""}${["sale", "purchase", "sale_return", "purchase_return"].includes(d.kind) && d.status === "posted" && d.paid < d.total && allowed("accounting", true) ? button("تسجيل سداد", "pay-doc", "secondary", `data-id="${id}"`) : ""}</footer>`,
     true,
   );
 }
@@ -974,7 +1047,7 @@ function reportParams() {
 }
 async function reportPage(name) {
   state.reportRows = await api(`reports/${name}`);
-  return `${pageHeader(reportNames[name], "تقرير من البيانات الفعلية. استخدم الفلاتر لتحديد الفترة ونطاق العرض.", button(`${icon("download")} تصدير CSV`, "export-report", "secondary") + button(`${icon("print")} طباعة`, "print-report", "primary"))}<section class="panel"><form id="report-filter" class="report-filter"><label class="field"><span>من تاريخ</span><input type="date" name="from"></label><label class="field"><span>إلى تاريخ</span><input type="date" name="to"></label>${inputField({ key: "branch_id", label: "الفرع (كل الفروع افتراضيًا)", type: "ref", ref: "branches" })}${
+  return `${pageHeader(reportNames[name], "تقرير من البيانات الفعلية. استخدم الفلاتر لتحديد الفترة ونطاق العرض.", button(`${icon("download")} تصدير CSV`, "export-report", "secondary") + button(`${icon("print")} طباعة`, "print-report", "primary"))}<section class="panel"><form id="report-filter" class="report-filter"><label class="field"><span>من تاريخ</span><input type="date" name="from"></label><label class="field"><span>إلى تاريخ</span><input type="date" name="to"></label>${inputField({ key: "branch_id", label: "الفرع (كل الفروع افتراضيًا)", type: "ref", ref: "branches" })}${name === "appointment_services" ? appointmentSelect("service_status","حالة الخدمة",["تنفيذ","معاينة","متابعة","إعادة العمل"].map(s=>[s,s])) + appointmentSelect("service_category","نوع الخدمة",[["مكافحة حشرات","مكافحة حشرات"],["تنظيف","تنظيف"]]) : ""}${
     name === "sales_summary"
       ? inputField(
           {
@@ -1010,7 +1083,7 @@ async function reportPage(name) {
           ref: "customers",
         })
       : ""
-  }<button class="btn primary" type="submit">${icon("filter")} تطبيق</button></form><div class="report-note">${icon("info")}${name === "stock" ? "تقرير رصيد المخزون الحالي؛ فلتر التاريخ لا يغيّر الرصيد الحالي." : name === "balance_sheet" ? "أرصدة حتى تاريخ النهاية، مع نتيجة الأعمال ضمن حقوق الملكية." : name === "trial_balance" ? "حركة المدين والدائن داخل الفترة، والرصيد حتى تاريخ النهاية." : name === "statement" ? "الرصيد = المدين ناقص الدائن، ويبدأ بالرصيد السابق للفترة." : "تظهر النتائج المسجلة داخل نطاق التقرير."}</div><div id="report-content" class="printable">${renderReport(name, state.reportRows)}</div></section>`;
+  }<button class="btn primary" type="submit">${icon("filter")} تطبيق</button></form><div class="report-note">${icon("info")}${name === "appointment_services" ? "الفترة حسب تاريخ الموعد؛ الإيرادات من الفواتير المرحلة بعد خصم المرتجعات. تغيير الحالة وحده لا ينشئ قيدًا." : name === "stock" ? "تقرير رصيد المخزون الحالي؛ فلتر التاريخ لا يغيّر الرصيد الحالي." : name === "balance_sheet" ? "أرصدة حتى تاريخ النهاية، مع نتيجة الأعمال ضمن حقوق الملكية." : name === "trial_balance" ? "حركة المدين والدائن داخل الفترة، والرصيد حتى تاريخ النهاية." : name === "statement" ? "الرصيد = المدين ناقص الدائن، ويبدأ بالرصيد السابق للفترة." : "تظهر النتائج المسجلة داخل نطاق التقرير."}</div><div id="report-content" class="printable">${renderReport(name, state.reportRows)}</div></section>`;
 }
 function renderReport(name, rows) {
   if (!rows.length)
@@ -1254,6 +1327,8 @@ function filterTable(query) {
   });
   const no = $(".no-search-results");
   if (no) no.classList.toggle("hidden", $$("tbody tr:not(.hidden)").length > 0);
+  const count = $("#appointment-selection-count");
+  if (count) count.textContent=String(selectedAppointments().length);
 }
 function confirmAction(titleText, message, action) {
   modal(
@@ -1448,19 +1523,23 @@ function notificationsModal() {
 
 document.addEventListener("click", async (event) => {
   const link = event.target.closest('a[href^="#/"]');
-  if (link?.dataset.module) {
+  const toggle = event.target.closest('[data-action="toggle-module"]');
+  if (toggle) {
     event.preventDefault();
-    const key = link.dataset.module;
+    const key = toggle.dataset.module;
     state.expandedModule = state.expandedModule === key ? null : key;
     $$("[data-module]").forEach((item) => item.setAttribute("aria-expanded", String(item.dataset.module === state.expandedModule)));
     Object.keys(modules).forEach((name) => {
       const subnav = $("#sidebar-" + name);
       if (subnav) { subnav.hidden = state.expandedModule !== name; subnav.style.display = subnav.hidden ? "none" : ""; }
     });
-    if (state.expandedModule && moduleOf(state.page) !== key) {
-      document.body.classList.remove("menu-open");
-      nav(key);
-    }
+    return;
+  }
+  if (link?.dataset.moduleLink) {
+    event.preventDefault();
+    state.expandedModule=link.dataset.moduleLink;
+    document.body.classList.remove("menu-open");
+    if (state.page===link.dataset.moduleLink) await renderPage(); else nav(link.dataset.moduleLink);
     return;
   }
   if (link) document.body.classList.remove("menu-open");
@@ -1470,6 +1549,11 @@ document.addEventListener("click", async (event) => {
     id = Number(el.dataset.id),
     resource = el.dataset.resource;
   try {
+    if (["appointments-today","appointments-clear","appointments-inspections-today"].includes(action)) {
+      state.appointmentFilters=action==="appointments-clear" ? {} : action==="appointments-inspections-today" ? {day:"today",service_status:"معاينة",status:"pending"} : {day:"today"};
+      return await renderPage();
+    }
+    if (action === "appointment-bulk") return await appointmentAction(selectedAppointments(),el.dataset.kind);
     if (action === "language") {
       const form = $("#auth-form");
       const authValues = form ? formData(form) : null;
@@ -1655,7 +1739,7 @@ document.addEventListener("click", async (event) => {
     if (action === "inspection-progress") {
       const d = await api(`documents/${id}`);
       return modal(
-        "متابعة المعاينة",
+        "متابعة عرض السعر",
         `<form id="progress-form" data-id="${id}"><div class="modal-body"><p class="muted">${esc(d.number)} — ${esc(d.customer)}</p>${inputField({ key: "progress", label: "مرحلة المتابعة", type: "select", required: true, options: ["جديدة", "مجدولة", "تمت المعاينة", "عرض مرسل", "مقبولة", "مرفوضة"] }, d.progress)}<div class="form-error"></div></div>${modalFooter()}</form>`,
       );
     }
@@ -1703,13 +1787,20 @@ document.addEventListener("submit", async (event) => {
         catch (error) { throw localizedClientError(t("تم حفظ بيانات الموظف. أعد المحاولة لرفع الملفات المتبقية:") + " " + pendingEmployeeFiles(uploads).map((file) => file.name).join(", ") + " — " + errorText(error)); }
       }
       await refreshBoot();
+    } else if (form.id === "appointment-filter") {
+      state.appointmentFilters=data;
+      return await renderPage();
+    } else if (form.id === "appointment-assignment") {
+      await api("appointments/actions",{method:"POST",body:{ids:state.assignmentIds,action:"assign",employee_id:data.employee_id}});
+      window.ServiqNotifications?.refresh();
     } else if (form.id === "document-form") {
       if (
         ["sale_return", "purchase_return"].includes(state.docKind) &&
         !state.source
       )
         throw new Error("اختر الفاتورة الأصلية أولًا");
-      await api("documents", {
+      const conversion=state.appointmentConversion;
+      await api(conversion ? `appointments/${conversion.id}/${conversion.kind}` : "documents", {
         method: "POST",
         body: {
           ...data,
@@ -1719,6 +1810,14 @@ document.addEventListener("submit", async (event) => {
           post: event.submitter?.value !== "draft",
         },
       });
+      if (conversion) {
+        const queue=[...state.appointmentQueue], kind=state.appointmentKind;
+        closeModal();await refreshBoot();await renderPage();
+        window.ServiqNotifications?.refresh();
+        state.appointmentQueue=queue;state.appointmentKind=kind;
+        if (queue.length) await nextAppointmentConversion();
+        toast("تم الحفظ بنجاح");return;
+      }
     } else if (form.id === "payment-form")
       await api("payments", { method: "POST", body: data });
     else if (form.id === "journal-form") {
@@ -1811,6 +1910,16 @@ document.addEventListener("input", (event) => {
 document.addEventListener("change", async (event) => {
   const el = event.target;
   try {
+    if (el.id==="appointment-select-all") {
+      $$(".appointment-select").filter(input=>!input.closest('tr').classList.contains('hidden')).forEach(input=>input.checked=el.checked);
+    }
+    if (el.id==="appointment-select-all" || el.classList.contains("appointment-select")) {
+      const count=$("#appointment-selection-count");if(count)count.textContent=String(selectedAppointments().length);
+      return;
+    }
+    if (el.classList.contains("appointment-row-action") && el.value) {
+      const action=el.value;el.value="";return await appointmentAction([Number(el.dataset.id)],action);
+    }
     if (el.type === "file") el._pendingEmployeeFiles = [...el.files];
     if (quotePricingLocked() && ["customer_id", "date"].includes(el.name)) {
       const cid = Number($("[name=customer_id]")?.value);

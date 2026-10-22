@@ -8,6 +8,7 @@ import datetime as dt
 import time
 
 import erp
+import appointments
 
 
 SCHEMA = '''
@@ -58,12 +59,14 @@ def _events(db, user):
                 events.append(_event(f"employee:{kind}:{row['id']}:{row['expiry']}", kind, title,
                                      f"{row['name']} — {row['expiry']}", '#/employees'))
     if erp.can(user, 'sales'):
-        for row in db.execute('SELECT id,customer_name,date,time FROM appointments WHERE date>=?', (today,)):
-            events.append(_event(f"appointment:{row['id']}:{row['date']}:{row['time']}", 'appointment',
-                                 'موعد محجوز', f"{row['customer_name']} — {row['date']} {row['time']}", '#/appointments'))
+        booking_today = appointments.business_today()
+        for row in db.execute("SELECT id,customer_name,date,time FROM appointments WHERE date>=? AND status IN ('scheduled','assigned')", (booking_today,)):
+            due = row['date']==booking_today
+            events.append(_event(f"appointment:{row['id']}:{row['date']}:{row['time']}:{'today' if due else 'upcoming'}", 'appointment',
+                                 'موعد اليوم' if due else 'موعد قادم', f"{row['customer_name']} — {row['date']} {row['time']}", '#/appointments?day=today' if due else '#/appointments'))
         rows = db.execute("SELECT d.id,d.number,d.date,COALESCE(c.name,'') customer FROM documents d LEFT JOIN customers c ON c.id=d.customer_id WHERE d.kind='inspection' AND d.progress NOT IN ('مرفوضة','محولة لفاتورة') AND NOT EXISTS(SELECT 1 FROM documents s WHERE s.source_id=d.id AND s.kind='sale' AND s.status='posted')")
         for row in rows:
-            events.append(_event(f"inspection:{row['id']}", 'inspection', 'معاينة بانتظار المتابعة',
+            events.append(_event(f"inspection:{row['id']}", 'inspection', 'عرض سعر بانتظار المتابعة',
                                  f"{row['customer']} — {row['number']} — {row['date']}", '#/doc_inspection'))
     return events
 

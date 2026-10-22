@@ -123,7 +123,7 @@ def run(directory, entrypoint='local'):
                 assert page.locator(f'[data-action=quotation-whatsapp][data-id="{inspection_id}"]').is_visible()
                 page.locator(f'[data-action=view-doc][data-id="{inspection_id}"]').click()
                 page.wait_for_selector('#print-content')
-                assert 'Inspection quotation' in page.locator('#print-content').inner_text()
+                assert 'Quotation' in page.locator('#print-content').inner_text()
                 assert customer in page.locator('#print-content').inner_text()
                 assert 'SAR' in page.locator('.grand-total').inner_text()
                 assert page.locator('#print-content علي').count() == 0
@@ -134,7 +134,7 @@ def run(directory, entrypoint='local'):
                         page.wait_for_selector(f'[data-action=view-doc][data-id="{inspection_id}"]')
                         page.locator(f'[data-action=view-doc][data-id="{inspection_id}"]').click()
                         page.wait_for_selector('#print-content')
-                        assert 'عرض سعر معاينة' in page.locator('#print-content').inner_text()
+                        assert 'عرض سعر' in page.locator('#print-content').inner_text()
                         assert 'ر.س' in page.locator('.grand-total').inner_text()
                     with page.expect_download() as result:
                         page.locator('#modal-root [data-action=quotation-pdf]').click()
@@ -153,7 +153,7 @@ def run(directory, entrypoint='local'):
                     assert customer in message and company in message
                     assert chr(10) in message and chr(92) + 'n' not in message
                     assert '228' in message and ('SAR' if language == 'en' else 'ر.س') in message
-                    assert ('inspection quotation' if language == 'en' else 'عرض سعر المعاينة') in message
+                    assert ('quotation' if language == 'en' else 'عرض السعر') in message
                     public_link = next(line for line in message.splitlines() if line.startswith(base + '/api/quotations/shared?token='))
                     # A separate context has no session cookie and can only retrieve the PDF.
                     public = browser.new_context()

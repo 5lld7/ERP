@@ -21,7 +21,7 @@ CREATE TABLE stock(product_id INTEGER,quantity REAL);
 CREATE TABLE stock_moves(id INTEGER PRIMARY KEY,product_id INTEGER);
 CREATE TABLE employees(id INTEGER PRIMARY KEY,name TEXT,status TEXT,residency_expiry TEXT,passport_expiry TEXT,driving_license_expiry TEXT);
 CREATE TABLE leaves(id INTEGER PRIMARY KEY,employee_id INTEGER,start_date TEXT,end_date TEXT,status TEXT);
-CREATE TABLE appointments(id INTEGER PRIMARY KEY,customer_name TEXT,date TEXT,time TEXT);
+CREATE TABLE appointments(id INTEGER PRIMARY KEY,customer_name TEXT,date TEXT,time TEXT,status TEXT NOT NULL DEFAULT 'scheduled');
 CREATE TABLE customers(id INTEGER PRIMARY KEY,name TEXT);
 CREATE TABLE documents(id INTEGER PRIMARY KEY,number TEXT,kind TEXT,date TEXT,customer_id INTEGER,progress TEXT,status TEXT,source_id INTEGER);
 INSERT INTO users VALUES(1),(2),(3),(4),(5),(6);
@@ -30,7 +30,7 @@ INSERT INTO stock VALUES(1,2),(3,10);
 INSERT INTO stock_moves VALUES(1,1);
 INSERT INTO employees VALUES(1,'بيانات موظف خاصة','نشط','2026-10-01','2026-11-10','2027-01-01'),(2,'موظف موقوف','موقوف','2026-10-01','2026-10-01','2026-10-01');
 INSERT INTO leaves VALUES(1,1,'2026-10-23','2026-10-24','قيد المراجعة');
-INSERT INTO appointments VALUES(1,'عميل موعد','2026-10-23','10:30'),(2,'موعد قديم','2026-10-01','10:30');
+INSERT INTO appointments(id,customer_name,date,time) VALUES(1,'عميل موعد','2026-10-23','10:30'),(2,'موعد قديم','2026-10-01','10:30');
 INSERT INTO customers VALUES(1,'عميل معاينة');
 INSERT INTO documents VALUES(1,'INS-1','inspection','2026-10-22',1,'جديدة','draft',NULL),(2,'INS-2','inspection','2026-10-22',1,'مرفوضة','posted',NULL),(3,'INS-3','inspection','2026-10-22',1,'محولة لفاتورة','posted',NULL),(4,'INS-4','inspection','2026-10-22',1,'مقبولة','posted',NULL),(5,'SAL-1','sale','2026-10-22',1,'جديدة','posted',4);
 '''
@@ -47,9 +47,12 @@ class NotificationCase(unittest.TestCase):
         self.db.executescript(FIXTURES + notifications.SCHEMA)
         self.today = patch.object(erp, 'today', return_value='2026-10-22')
         self.today.start()
+        self.booking_today = patch.object(notifications.appointments, 'business_today', return_value='2026-10-22')
+        self.booking_today.start()
 
     def tearDown(self):
         self.today.stop()
+        self.booking_today.stop()
         self.db.close()
         self.directory.cleanup()
 

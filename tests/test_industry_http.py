@@ -116,7 +116,7 @@ class IndustryHTTPCase(unittest.TestCase):
     def appointment(self, **changes):
         data = dict(customer_name='عميل موعد جديد', date=erp.today(), time='14:30',
                     address='عنوان المعاينة التفصيلي', phone='01012345678',
-                    service_type='معاينة', site_type='فيلا')
+                    service_status='معاينة', service_id=self.service, site_type='فيلا')
         data.update(changes)
         return data
 
@@ -219,7 +219,7 @@ class IndustryHTTPCase(unittest.TestCase):
         self.assertIsNone(self.db.execute('SELECT 1 FROM products WHERE id=?', (self.service,)).fetchone())
 
     def test_appointment_booking_preserves_requested_fields_and_validates_the_dropdowns(self):
-        booking = self.appointment(service_type='إعادة عمل', site_type='مبنى تجاري')
+        booking = self.appointment(service_status='إعادة العمل', site_type='مبنى تجاري')
         status, result, _ = self.request('/api/resources/appointments', 'POST', booking, role='technician')
         self.assertEqual(status, 200, result)
         status, bookings, _ = self.request('/api/resources/appointments', role='technician')
@@ -227,7 +227,7 @@ class IndustryHTTPCase(unittest.TestCase):
         stored = next(row for row in bookings if row['id'] == result['id'])
         for key, value in booking.items():
             self.assertEqual(stored[key], value)
-        for changes in ({'service_type': 'موعد مجهول'}, {'site_type': 'خيمة'}, {'time': '25:99'}):
+        for changes in ({'service_status': 'موعد مجهول'}, {'site_type': 'خيمة'}, {'time': '25:99'}):
             with self.subTest(changes=changes):
                 self.assertEqual(self.request('/api/resources/appointments', 'POST', self.appointment(**changes),
                                               role='technician')[0], 400)

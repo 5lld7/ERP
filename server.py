@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, quote
 
 import erp
+import appointments
 import notifications
 import quotations
 from currencies import currency_metadata, validate_currency_change
@@ -31,7 +32,7 @@ REPORT_MODULES = {
     'balance_sheet':'accounting','tax':'accounting','sales':'sales','purchases':'accounting',
     'inspections':'sales','best_products':'sales','best_customers':'sales','sales_summary':'sales','customer_balances':'accounting',
     'supplier_balances':'accounting','statement':'accounting','cashflow':'accounting',
-    'payroll':'hr','attendance':'hr','assets':'accounting',
+    'payroll':'hr','attendance':'hr','assets':'accounting','appointment_services':'sales',
 }
 
 
@@ -208,12 +209,37 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     cols='id,name,code' if name=='accounts' else 'id,name,code,name_en' if name=='units' else 'id,name'
                     refs[name]=[dict(r) for r in db.execute(f'SELECT {cols} FROM {name} ORDER BY name')]
+                if erp.can(user,'sales'):
+                    refs['appointment_employees']=[dict(r) for r in db.execute("SELECT id,name FROM employees WHERE status='نشط' ORDER BY name")]
+                    refs['services']=[dict(r) for r in db.execute("SELECT id,name,service_category FROM products WHERE item_type='service' ORDER BY name")]
                 resources={name:spec for name,spec in erp.RESOURCES.items() if erp.can(user,spec['module'])}
                 company_settings=erp.settings(db)
                 return self.respond({'user':user,'settings':company_settings,'resources':resources,'refs':refs,'kinds':{k:v for k,v in erp.KINDS.items() if erp.document_allowed(user,k)},'roles':erp.ROLES,'reports':permitted_reports(user),'serverless':bool(os.environ.get('VERCEL')),**currency_metadata(db,company_settings['currency'])})
             if path=='/api/dashboard' and method=='GET':
                 return self.respond(erp.dashboard(db,user))
             parts=path.strip('/').split('/')
+            if len(parts)>=2 and parts[1]=='appointments':
+                erp.require(user,'sales',method!='GET')
+                if len(parts)==2 and method=='GET':
+                    return self.respond({'items':appointments.list_appointments(db,params), 'summary':appointments.appointment_summary(db), 'today':appointments.business_today(), 'statuses':appointments.STATUSES})
+                if len(parts)==3 and parts[2]=='actions' and method=='POST':
+                    data=self.json_body()
+                    with erp.transaction(db):
+                        rows=appointments.batch_action(db,data.get('ids'),data.get('action'),data.get('employee_id'),user)
+                    return self.respond({'ok':True,'items':rows})
+                if len(parts) in (3,4):
+                    aid=appointments._positive_id(parts[2])
+                    if method=='GET' and len(parts)==3:
+                        return self.respond(appointments.get_appointment(db,aid))
+                    if len(parts)==4 and parts[3] in ('quotation','invoice'):
+                        if method=='GET':
+                            return self.respond(appointments.prepare_quotation(db,aid,user))
+                        if method=='POST':
+                            data=self.json_body()
+                            with erp.transaction(db):
+                                result=appointments.create_document(db,aid,data,user,'inspection' if parts[3]=='quotation' else 'sale')
+                            return self.respond(result)
+                return self.respond({'error':'عملية غير مسموحة'},405)
             if len(parts)>=3 and parts[1]=='resources':
                 name=parts[2]
                 if name not in erp.RESOURCES:
@@ -229,6 +255,8 @@ class Handler(BaseHTTPRequestHandler):
                     if method in ('POST','PUT'):
                         eid=erp.save_resource(db,name,self.json_body(),user['id'],eid)
                     elif method=='DELETE' and eid:
+                        if name=='appointments':
+                            appointments.ensure_deletable(db,eid)
                         if name=='accounts':
                             account=db.execute('SELECT code FROM accounts WHERE id=?',(eid,)).fetchone()
                             if account and account['code'] in {c[0] for c in erp.CHART}:

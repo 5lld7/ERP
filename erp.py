@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('ERP_DATA_DIR', '/tmp/erp' if os.environ.get('VERCEL') else ROOT / '.local')).resolve()
 DB_PATH = DATA / 'erp.sqlite3'
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class BusinessError(Exception):
@@ -76,8 +76,8 @@ RESOURCES = {
     'categories': dict(label='تصنيفات الأصناف', module='inventory', fields=[field('name', 'اسم التصنيف', required=True)]),
     'units': dict(label='وحدات القياس', module='inventory', fields=[field('name', 'الوحدة', required=True), field('name_en', 'اسم الوحدة بالإنجليزية')]),
     'products': dict(label='الأصناف', module='inventory', fields=[field('name', 'اسم الصنف', required=True), field('sku', 'كود الصنف', required=True), field('barcode', 'الباركود'), field('category_id', 'التصنيف', 'ref', ref='categories'), field('unit_id', 'الوحدة', 'ref', True, ref='units'), field('cost', 'تكلفة الشراء', 'money', True), field('price', 'سعر البيع', 'money', True), field('min_stock', 'حد إعادة الطلب', 'number'), field('expiry_date', 'تاريخ الصلاحية', 'date')]),
-    'services': dict(label='الخدمات', module='inventory', fields=[field('name', 'اسم الخدمة', required=True), field('sku', 'كود الخدمة', required=True), field('unit_id', 'الوحدة', 'ref', True, ref='units'), field('price', 'سعر الخدمة', 'money', True), field('service_method', 'طريقة عمل الخدمة', 'textarea')]),
-    'appointments': dict(label='حجز موعد معاينة', module='sales', fields=[field('customer_name', 'اسم العميل', required=True), field('date', 'تاريخ المعاينة', 'date', True), field('time', 'وقت المعاينة', 'time', True), field('address', 'العنوان', 'textarea', True), field('phone', 'رقم التليفون', required=True), field('service_type', 'نوع الخدمة', 'select', True, options=['تنفيذ', 'معاينة', 'متابعة', 'إعادة عمل']), field('site_type', 'نوع الموقع', 'select', True, options=['شقة', 'فيلا', 'تاون فيلا', 'منزل', 'قطعة أرض', 'مبنى حكومي', 'مبنى تجاري'])]),
+    'services': dict(label='الخدمات', module='inventory', fields=[field('name', 'اسم الخدمة', required=True), field('sku', 'كود الخدمة', required=True), field('service_category', 'نوع الخدمة', 'select', options=['', 'مكافحة حشرات', 'تنظيف']), field('unit_id', 'الوحدة', 'ref', True, ref='units'), field('price', 'سعر الخدمة', 'money', True), field('service_method', 'طريقة عمل الخدمة', 'textarea')]),
+    'appointments': dict(label='حجز موعد', module='sales', fields=[field('customer_name', 'اسم العميل', required=True), field('date', 'تاريخ الموعد', 'date', True), field('time', 'وقت الموعد', 'time', True), field('address', 'العنوان', 'textarea', True), field('phone', 'رقم التليفون', required=True), field('service_status', 'حالة الخدمة', 'select', True, options=['تنفيذ', 'معاينة', 'متابعة', 'إعادة العمل']), field('service_id', 'الخدمة', 'ref', ref='services'), field('site_type', 'نوع الموقع', 'select', True, options=['شقة', 'فيلا', 'تاون فيلا', 'منزل', 'قطعة أرض', 'مبنى حكومي', 'مبنى تجاري'])]),
     'customers': dict(label='العملاء', module='sales', fields=[field('name', 'اسم العميل', required=True), field('phone', 'الهاتف'), field('email', 'البريد الإلكتروني', 'email'), field('address', 'العنوان'), field('tax_number', 'الرقم الضريبي'), field('classification', 'التصنيف', 'select', options=['عادي', 'مميز', 'مؤسسة']), field('credit_limit', 'حد الائتمان (صفر = بدون حد)', 'money'), field('payment_terms', 'شروط الدفع بالأيام', 'number')]),
     'suppliers': dict(label='الموردون', module='accounting', fields=[field('name', 'اسم المورد', required=True), field('phone', 'الهاتف'), field('email', 'البريد الإلكتروني', 'email'), field('address', 'العنوان'), field('tax_number', 'الرقم الضريبي'), field('payment_terms', 'شروط الدفع بالأيام', 'number')]),
     'departments': dict(label='الإدارات والأقسام', module='hr', fields=[field('name', 'اسم الإدارة', required=True)]),
@@ -132,7 +132,7 @@ KINDS = {
     'purchase': ['فاتورة مشتريات', 'accounting', 'PUR'], 'purchase_return': ['مرتجع مشتريات', 'accounting', 'PRT'],
     'purchase_order': ['أمر شراء', 'inventory', 'PO'], 'receipt': ['استلام أصناف', 'inventory', 'REC'],
     'sale': ['فاتورة مبيعات', 'sales', 'SAL'], 'sale_return': ['مرتجع مبيعات', 'sales', 'SRT'],
-    'inspection': ['معاينة وعرض سعر', 'sales', 'INS'], 'transfer': ['تحويل بين المخازن', 'inventory', 'TRF'],
+    'inspection': ['عرض سعر', 'sales', 'INS'], 'transfer': ['تحويل بين المخازن', 'inventory', 'TRF'],
     'issue': ['صرف / تالف', 'inventory', 'ISS'], 'adjustment': ['جرد وتسوية مخزون', 'inventory', 'ADJ'],
 }
 ROLES = {'admin': 'مدير النظام', 'accounting': 'محاسب', 'inventory': 'مسؤول المخزن', 'sales': 'مسؤول المبيعات', 'hr': 'الموارد البشرية', 'viewer': 'مشاهدة عامة', 'technician': 'فني'}
@@ -185,7 +185,7 @@ def _initialize_schema(db):
         for f in spec['fields']:
             col = f'{f["key"]} {SQL_TYPES[f["type"]]}'
             if f['type'] == 'ref':
-                col += f' REFERENCES {f["ref"]}(id)'
+                col += f' REFERENCES {resource_table(f["ref"])}(id)'
             columns.append(col)
         columns.append('created_at TEXT DEFAULT CURRENT_TIMESTAMP')
         db.execute(f'CREATE TABLE IF NOT EXISTS {name} ({",".join(columns)})')
@@ -194,20 +194,33 @@ def _initialize_schema(db):
             if f['key'] not in existing:
                 definition = SQL_TYPES[f['type']]
                 if f['type'] == 'ref':
-                    definition += f' REFERENCES {f["ref"]}(id)'
+                    definition += f' REFERENCES {resource_table(f["ref"])}(id)'
                 db.execute(f'ALTER TABLE {name} ADD COLUMN {f["key"]} {definition}')
     for statement in SCHEMA.split(';'):
         if statement.strip():
             db.execute(statement)
     for table, additions in {
-        'products': [('item_type', "TEXT NOT NULL DEFAULT 'product'"), ('service_method', "TEXT NOT NULL DEFAULT ''")],
+        'products': [('item_type', "TEXT NOT NULL DEFAULT 'product'"), ('service_method', "TEXT NOT NULL DEFAULT ''"), ('service_category', "TEXT NOT NULL DEFAULT ''")],
         'units': [('code', 'TEXT')],
         'document_lines': [('service_method', "TEXT NOT NULL DEFAULT ''")],
+        'documents': [('service_activity', "TEXT NOT NULL DEFAULT ''")],
+        'appointments': [('status', "TEXT NOT NULL DEFAULT 'scheduled'"),
+                         ('assigned_employee_id', 'INTEGER REFERENCES employees(id)'),
+                         ('quotation_id', 'INTEGER REFERENCES documents(id)'),
+                         ('invoice_id', 'INTEGER REFERENCES documents(id)'),
+                         ('completed_at', 'TEXT'), ('updated_at', 'TEXT')],
     }.items():
         existing = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
         for column, definition in additions:
             if column not in existing:
                 db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+    # Preserve the original booking purpose without overwriting later edits.
+    appointment_columns = {r['name'] for r in db.execute('PRAGMA table_info(appointments)')}
+    if 'service_type' in appointment_columns:
+        db.execute("UPDATE appointments SET service_status=CASE WHEN service_type='إعادة عمل' THEN 'إعادة العمل' ELSE service_type END WHERE (service_status IS NULL OR service_status='') AND service_type IN ('تنفيذ','معاينة','متابعة','إعادة عمل')")
+    db.execute('CREATE INDEX IF NOT EXISTS appointments_day_status ON appointments(date,status,time)')
+    db.execute('CREATE INDEX IF NOT EXISTS appointments_assignee ON appointments(assigned_employee_id,date)')
+    db.execute('CREATE TABLE IF NOT EXISTS service_activity_accounts (activity TEXT PRIMARY KEY, account_id INTEGER NOT NULL UNIQUE REFERENCES accounts(id))')
     db.execute("UPDATE customers SET classification='مؤسسة' WHERE classification='جملة'")
     doc_columns={r['name'] for r in db.execute('PRAGMA table_info(documents)')}
     for column,definition in [('progress',"TEXT NOT NULL DEFAULT 'جديدة'"),('appointment_date','TEXT'),('location','TEXT')]:
@@ -304,12 +317,26 @@ def resource_filter(name):
 
 
 def list_resource(db, name):
+    if name == 'appointments':
+        from appointments import list_appointments
+        return list_appointments(db)
     return [serialize_row(r,RESOURCES[name]) for r in db.execute(f'SELECT * FROM {resource_table(name)} WHERE {resource_filter(name)} ORDER BY id DESC')]
 
 
 def save_resource(db, name, data, uid, eid=None):
     spec = RESOURCES[name]
     table, predicate = resource_table(name), resource_filter(name)
+    if name == 'appointments':
+        data = dict(data)
+        if not data.get('service_status') and data.get('service_type') in ('تنفيذ','معاينة','متابعة','إعادة عمل'):
+            data['service_status'] = 'إعادة العمل' if data['service_type']=='إعادة عمل' else data['service_type']
+        if not data.get('service_id') and not data.get('service_type'):
+            raise BusinessError('اختر الخدمة من كتالوج الخدمات')
+    if name == 'appointments' and eid:
+        from appointments import get_appointment
+        old_appointment = get_appointment(db, eid)
+        if old_appointment['quotation_id'] or old_appointment['invoice_id']:
+            raise BusinessError('الموعد مرتبط بعرض سعر أو فاتورة؛ لا يمكن تعديل بياناته')
     values = {}
     for f in spec['fields']:
         key, kind = f['key'], f['type']
@@ -326,7 +353,9 @@ def save_resource(db, name, data, uid, eid=None):
                 raise BusinessError('القيمة لا تقبل السالب')
         elif kind == 'ref':
             value = int(value) if value else None
-            if value and not db.execute(f'SELECT 1 FROM {f["ref"]} WHERE id=?',(value,)).fetchone():
+            ref_table = resource_table(f['ref'])
+            ref_filter = resource_filter('services') if f['ref']=='services' else '1=1'
+            if value and not db.execute(f'SELECT 1 FROM {ref_table} WHERE id=? AND {ref_filter}',(value,)).fetchone():
                 raise BusinessError('العنصر المرتبط غير موجود')
         elif kind == 'date':
             value = valid_date(value) if value else None
@@ -378,6 +407,9 @@ def save_resource(db, name, data, uid, eid=None):
             for employee_id, date in [(old['employee_id'],old['date']),(values['employee_id'],values['date'])]:
                 if db.execute('SELECT 1 FROM payroll_lines WHERE employee_id=? AND month=?',(employee_id,date[:7])).fetchone():
                     raise BusinessError('حضور هذا الشهر مستخدم في مسير رواتب مرحّل')
+        if name == 'appointments':
+            from appointments import _now
+            values['updated_at'] = _now()
         db.execute(f'UPDATE {table} SET '+','.join(f'{k}=?' for k in values)+f' WHERE id=? AND {predicate}',(*values.values(),eid))
     else:
         if name in ('attendance','employee_adjustments') and db.execute('SELECT 1 FROM payroll_lines WHERE employee_id=? AND month=?',(values['employee_id'],values['date'][:7])).fetchone():
@@ -519,6 +551,8 @@ def save_document(db, data, user):
             raise BusinessError('المستند المصدر غير صحيح أو غير مرحّل')
         if src['customer_id']!=cid or src['supplier_id']!=sid:
             raise BusinessError('طرف المستند لا يطابق المستند المصدر')
+        if kind=='sale' and db.execute('SELECT 1 FROM appointments WHERE quotation_id=? AND invoice_id IS NOT NULL',(source,)).fetchone():
+            raise BusinessError('الموعد مرتبط بفاتورة مبيعات بالفعل')
         if kind in ('sale_return','purchase_return'):
             for line in lines:
                 original = db.execute('SELECT * FROM document_lines WHERE document_id=? AND product_id=?',(source,line['product_id'])).fetchone()
@@ -545,11 +579,17 @@ def save_document(db, data, user):
     seq = db.execute('SELECT COALESCE(MAX(id),0)+1 FROM documents').fetchone()[0]
     docnum = f'{KINDS[kind][2]}-{date[:4]}-{seq:05}'
     did = db.execute('INSERT INTO documents(number,kind,date,due_date,customer_id,supplier_id,warehouse_id,target_warehouse_id,source_id,subtotal,discount,tax_rate,tax,total,paid,payment_method,note,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(docnum,kind,date,due,cid,sid,wid,target,source,subtotal,discount,tax_rate,tax,total,paid,method,str(data.get('note',''))[:4000],user['id'])).lastrowid
+    if source:
+        db.execute('UPDATE documents SET service_activity=? WHERE id=?',(src['service_activity'],did))
     if kind=='inspection':
         appointment=valid_date(data['appointment_date']) if data.get('appointment_date') else None
         db.execute('UPDATE documents SET appointment_date=?,location=? WHERE id=?',(appointment,str(data.get('location',''))[:1000],did))
     for l in lines:
         db.execute('INSERT INTO document_lines(document_id,product_id,quantity,price,total,service_method) VALUES(?,?,?,?,?,?)',(did,l['product_id'],l['quantity'],l['price'],l['total'],l['service_method']))
+    if kind=='sale' and source:
+        from appointments import _now
+        now=_now()
+        db.execute("UPDATE appointments SET invoice_id=?,status='invoiced',completed_at=COALESCE(completed_at,?),updated_at=? WHERE quotation_id=?",(did,now,now,source))
     audit(db,user['id'],'إنشاء مستند','documents',did,docnum)
     if data.get('post',True):
         post_document(db,did,user)
@@ -628,6 +668,10 @@ def post_document(db, did, user):
                 inventory_value += rounded(Decimal(str(delta))*Decimal(str(cost)))
         db.execute('UPDATE document_lines SET cost=? WHERE id=?',(cost,l['id']))
     jl = []
+    revenue_account = None
+    if kind in ('sale','sale_return') and doc['service_activity']:
+        from appointments import activity_account
+        revenue_account = activity_account(db,doc['service_activity'])
     if kind=='sale':
         jl = [dict(code='1200',debit=total,customer_id=cid),dict(code='4100',credit=total-tax),dict(code='2200',credit=tax),dict(code='5100',debit=costs),dict(code='1300',credit=costs)]
     elif kind=='sale_return':
@@ -645,6 +689,10 @@ def post_document(db, did, user):
         jl = [dict(code='5500',debit=costs),dict(code='1300',credit=costs)]
     elif kind=='adjustment' and inventory_value:
         jl = [dict(code='1300',debit=max(0,inventory_value),credit=max(0,-inventory_value)),dict(code='5500',credit=max(0,inventory_value),debit=max(0,-inventory_value))]
+    if revenue_account:
+        for line in jl:
+            if line.get('code')=='4100':
+                line['account_id']=revenue_account
     if any(l.get('debit',0) or l.get('credit',0) for l in jl):
         journal(db,date,f'{KINDS[kind][0]} {doc["number"]}',jl,user['id'],'document',did)
     db.execute("UPDATE documents SET status='posted',paid=0 WHERE id=?",(did,))
@@ -819,6 +867,9 @@ def report(db,name,params):
     if end<start:
         raise BusinessError('راجع نطاق التقرير')
     rows=[]
+    if name=='appointment_services':
+        from appointments import service_report
+        return service_report(db, params)
     if name=='stock':
         rows=db.execute("SELECT p.id,p.sku,p.name,p.barcode,w.name warehouse,b.name branch,COALESCE(s.quantity,0) quantity,COALESCE(s.avg_cost,p.cost)/100.0 cost,ROUND(COALESCE(s.quantity*s.avg_cost,0)/100.0,2) value,p.min_stock,p.expiry_date FROM products p CROSS JOIN warehouses w JOIN branches b ON b.id=w.branch_id LEFT JOIN stock s ON s.product_id=p.id AND s.warehouse_id=w.id WHERE COALESCE(p.item_type,'product')!='service' AND (?=0 OR b.id=?) ORDER BY p.name,w.name",(branch,branch)).fetchall()
     elif name=='moves':

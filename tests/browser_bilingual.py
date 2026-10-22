@@ -178,12 +178,12 @@ def run(directory, entrypoint='local'):
                 page.wait_for_function("Math.abs(document.querySelector('.sidebar').getBoundingClientRect().x) < 1")
                 sidebar = page.locator('.sidebar').bounding_box()
                 assert sidebar['x'] == 0, sidebar
-                page.locator('.sidebar a[href="#/inventory"]').click()
-                assert page.locator('.sidebar a[href="#/inventory"]').get_attribute('aria-expanded') == 'false'
+                page.locator('[data-action=toggle-module][data-module=inventory]').click()
+                assert page.locator('[data-action=toggle-module][data-module=inventory]').get_attribute('aria-expanded') == 'false'
                 assert page.locator('#report-content table').is_visible()
                 assert 'menu-open' in page.locator('body').get_attribute('class')
-                page.locator('.sidebar a[href="#/inventory"]').click()
-                assert page.locator('.sidebar a[href="#/inventory"]').get_attribute('aria-expanded') == 'true'
+                page.locator('[data-action=toggle-module][data-module=inventory]').click()
+                assert page.locator('[data-action=toggle-module][data-module=inventory]').get_attribute('aria-expanded') == 'true'
                 page.locator('.sidebar a[href="#/products"]').click()
                 page.wait_for_selector('tbody tr')
                 assert 'menu-open' not in page.locator('body').get_attribute('class')

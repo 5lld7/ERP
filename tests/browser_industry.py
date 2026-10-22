@@ -76,8 +76,8 @@ def run(entrypoint='local', screenshots='/tmp/serviq-industry-screenshots'):
                     page.wait_for_selector('#main .loading', state='detached')
 
                 accounting = page.locator('[data-module=accounting]')
-                accounting.click()
-                page.wait_for_selector('#currency-form')
+                page.locator('[data-module-link=accounting]').click()
+                page.wait_for_selector('.module-intro')
                 accounting.click()
                 assert accounting.get_attribute('aria-expanded') == 'false'
                 assert page.locator('#sidebar-accounting').is_hidden()
@@ -171,14 +171,15 @@ def run(entrypoint='local', screenshots='/tmp/serviq-industry-screenshots'):
                 page.locator('[data-action=new-resource]').click()
                 for key, value in {'customer_name': customer, 'date': upcoming, 'time': '10:30', 'address': 'Customer villa', 'phone': '01012345678'}.items():
                     page.locator(f'#resource-form [name={key}]').fill(value)
-                page.locator('[name=service_type]').select_option('متابعة')
+                page.locator('#resource-form [name=service_status]').select_option('متابعة')
+                page.locator('#resource-form [name=service_id]').select_option(str(service_id))
                 page.locator('[name=site_type]').select_option('تاون فيلا')
-                assert page.locator('[name=service_type] option[value="متابعة"]').inner_text() == 'Follow-up'
+                assert page.locator('#resource-form [name=service_status] option[value="متابعة"]').inner_text() == 'Follow-up'
                 page.locator('#resource-form button[type=submit]').click()
                 page.wait_for_selector('#resource-form', state='detached')
                 appointment = call('resources/appointments')[0]
                 assert appointment['customer_name'] == customer and appointment['time'] == '10:30'
-                assert appointment['service_type'] == 'متابعة' and appointment['site_type'] == 'تاون فيلا'
+                assert appointment['service_status'] == 'متابعة' and appointment['site_type'] == 'تاون فيلا'
 
                 visit('doc_inspection')
                 page.locator('[data-action=new-doc]').click()

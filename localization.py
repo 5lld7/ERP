@@ -165,6 +165,9 @@ ERRORS = {
 }
 
 ERRORS.update({
+    'الموعد مرتبط بعرض سعر أو فاتورة؛ لا يمكن تعديل بياناته':'Appointment details are locked after conversion to a quotation or invoice.',
+    'الموعد مرتبط بفاتورة مبيعات؛ لا يمكن إلغاؤه من المواعيد':'This appointment has a sales invoice and cannot be cancelled from appointments.',
+    'لا يمكن حذف موعد مرتبط بعرض سعر أو فاتورة':'An appointment linked to a quotation or invoice cannot be deleted.',
     'الخدمات لا تدخل في حركات المخزون': 'Services cannot be included in stock movements.',
     'تعديل الخصم والضريبة في عرض السعر متاح للمدير فقط': 'Only the administrator can change quotation discounts and tax.',
     'الخدمات متاحة في المعاينات والمبيعات فقط': 'Services are available only in inspections and sales.',
@@ -174,6 +177,7 @@ ERRORS.update({
 })
 
 FIELD_LABELS = {
+    'حالة الخدمة': 'Service activity', 'الخدمة': 'Service', 'تاريخ الموعد': 'Appointment date', 'وقت الموعد': 'Appointment time',
     'اسم الوحدة بالإنجليزية': 'Unit name in English',
     'اسم الخدمة': 'Service name', 'كود الخدمة': 'Service code',
     'سعر الخدمة': 'Service price', 'طريقة عمل الخدمة': 'Service method',
@@ -263,7 +267,7 @@ KINDS = {
     'purchase': ('فاتورة مشتريات', 'Purchase invoice'), 'purchase_return': ('مرتجع مشتريات', 'Purchase return'),
     'purchase_order': ('أمر شراء', 'Purchase order'), 'receipt': ('استلام أصناف', 'Goods receipt'),
     'sale': ('فاتورة مبيعات', 'Sales invoice'), 'sale_return': ('مرتجع مبيعات', 'Sales return'),
-    'inspection': ('معاينة وعرض سعر', 'Inspection / quotation'), 'transfer': ('تحويل بين المخازن', 'Warehouse transfer'),
+    'inspection': ('عرض سعر', 'Quotation'), 'transfer': ('تحويل بين المخازن', 'Warehouse transfer'),
     'issue': ('صرف / تالف', 'Stock issue / damage'), 'adjustment': ('جرد وتسوية مخزون', 'Stock count / adjustment'),
 }
 FIXED_VALUES = {
@@ -292,6 +296,37 @@ CHART_NAMES = {
 }
 
 
+ERRORS.update({
+    'المعاينة غير موجودة':'Appointment not found.',
+    'اختر فلتر تاريخ صحيحًا للمعاينات':'Choose a valid appointment date filter.',
+    'راجع نطاق مواعيد المعاينات':'Check the appointment date range.',
+    'حدد معاينة واحدة على الأقل بحد أقصى 500 معاينة':'Select between 1 and 500 appointments.',
+    'اختر إجراءً صحيحًا للمعاينات':'Choose a valid appointment action.',
+    'اختر حالة صحيحة للمعاينة':'Choose a valid appointment status.',
+    'اختر معاينة صحيحة':'Choose a valid appointment.',
+    'اختر موظف معاينات صحيحًا':'Choose a valid employee.',
+    'اختر موظف معاينات نشطًا':'Choose an active employee.',
+    'الموعد مرتبط بفاتورة مبيعات بالفعل':'This appointment already has a sales invoice.',
+    'أعد فتح المعاينة قبل تحويلها إلى عرض سعر':'Reopen the appointment before converting it.',
+    'رحّل عرض السعر قبل تحويل الموعد إلى فاتورة':'Post the quotation before converting the appointment to an invoice.',
+    'لا يمكن حذف معاينة مرتبطة بعرض سعر':'An appointment linked to a quotation or invoice cannot be deleted.',
+    'يوجد أكثر من عميل بنفس رقم الهاتف؛ اختر العميل لعرض السعر':'More than one customer has this phone number; select the correct customer.',
+    'اختر حالة أو نوع خدمة صحيحًا':'Choose a valid service activity or category.',
+    'لا يمكن إسناد معاينة مغلقة؛ أعد فتحها أولًا':'Reopen the closed appointment before assigning it.',
+    'المعاينة مرتبطة بعرض سعر؛ استخدم حالة عدم التنفيذ':'The appointment has a quotation or invoice; retain the linked document.',
+    'لا يمكن إعادة فتح معاينة مرتبطة بعرض سعر':'An appointment linked to a quotation or invoice cannot be reopened.',
+    'المعاينة مرتبطة بعرض سعر؛ لا يمكن تعديل بياناتها':'Appointment details are locked after conversion to a quotation or invoice.',
+    'اختر الخدمة من كتالوج الخدمات':'Choose a service from the service catalog.',
+})
+COLUMNS.update({
+    'service_status':('حالة الخدمة','Service activity'), 'appointments':('عدد المواعيد','Appointments'),
+    'completed':('المواعيد المكتملة','Completed appointments'), 'quotations':('عروض الأسعار','Quotations'),
+    'invoiced':('الفواتير المرحلة','Posted invoices'), 'net_revenue':('صافي الإيراد قبل الضريبة','Net revenue before tax'),
+})
+FIXED_VALUES.update({s:(s,t) for s,t in [('تنفيذ','Execution'),('معاينة','Inspection'),('متابعة','Follow-up'),('إعادة العمل','Rework')]})
+CHART_NAMES.update({'4111':('إيرادات تنفيذ الخدمات','Service execution revenue'),'4112':('إيرادات المعاينات','Inspection revenue'),'4113':('إيرادات المتابعة','Follow-up revenue'),'4114':('إيرادات إعادة العمل','Rework revenue')})
+
+
 def csv_headers(report, keys, language):
     index = 1 if language == 'en' else 0
     return [COLUMNS.get(key, (key, key))[index] for key in keys]
@@ -303,7 +338,7 @@ def csv_row_values(report, row, language, row_index=0):
     index = 1 if language == 'en' else 0
     enum_fields = {
         'tax': ('kind',), 'sales': ('kind', 'status'), 'purchases': ('kind', 'status'),
-        'inspections': ('kind', 'status'), 'attendance': ('status',),
+        'inspections': ('kind', 'status'), 'attendance': ('status',), 'appointment_services': ('service_status',),
         'trial_balance': ('type',), 'income': ('type',), 'balance_sheet': ('type',),
         'cashflow': ('direction', 'method'), 'moves': ('reason',),
     }.get(report, ())
