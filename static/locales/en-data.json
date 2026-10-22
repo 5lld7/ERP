@@ -381,5 +381,10 @@
   "إيرادات المعاينات": "Inspection revenue",
   "إيرادات المتابعة": "Follow-up revenue",
   "إيرادات إعادة العمل": "Rework revenue",
-  "اليوم": "Today"
+  "اليوم": "Today",
+  "أنواع الخدمات": "Service types",
+  "إدارة أنواع الخدمات": "Manage service types",
+  "اسم نوع الخدمة": "Service type name",
+  "اسم نوع الخدمة بالإنجليزية": "Service type name in English",
+  "نوع خدمة": "service type"
 }

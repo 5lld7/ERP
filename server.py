@@ -213,6 +213,10 @@ class Handler(BaseHTTPRequestHandler):
                     refs['appointment_employees']=[dict(r) for r in db.execute("SELECT id,name FROM employees WHERE status='نشط' ORDER BY name")]
                     refs['services']=[dict(r) for r in db.execute("SELECT id,name,service_category FROM products WHERE item_type='service' ORDER BY name")]
                 resources={name:spec for name,spec in erp.RESOURCES.items() if erp.can(user,spec['module'])}
+                if erp.can(user,'sales') or erp.can(user,'inventory'):
+                    refs['service_types']=[dict(r) for r in db.execute('SELECT id,name,name_en FROM service_types ORDER BY name')]
+                if 'services' in resources:
+                    resources['services']={**resources['services'],'fields':[{**f,'options':[r['name'] for r in refs['service_types']],'translateOptions':False} if f['key']=='service_category' else f for f in resources['services']['fields']]}
                 company_settings=erp.settings(db)
                 return self.respond({'user':user,'settings':company_settings,'resources':resources,'refs':refs,'kinds':{k:v for k,v in erp.KINDS.items() if erp.document_allowed(user,k)},'roles':erp.ROLES,'reports':permitted_reports(user),'serverless':bool(os.environ.get('VERCEL')),**currency_metadata(db,company_settings['currency'])})
             if path=='/api/dashboard' and method=='GET':
@@ -255,6 +259,8 @@ class Handler(BaseHTTPRequestHandler):
                     if method in ('POST','PUT'):
                         eid=erp.save_resource(db,name,self.json_body(),user['id'],eid)
                     elif method=='DELETE' and eid:
+                        if name=='service_types' and db.execute("SELECT 1 FROM products p JOIN service_types t ON t.name=p.service_category WHERE p.item_type='service' AND t.id=?",(eid,)).fetchone():
+                            raise erp.BusinessError('نوع الخدمة مستخدم؛ انقل الخدمات إلى نوع آخر قبل حذفه')
                         if name=='appointments':
                             appointments.ensure_deletable(db,eid)
                         if name=='accounts':

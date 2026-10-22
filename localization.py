@@ -177,6 +177,7 @@ ERRORS.update({
 })
 
 FIELD_LABELS = {
+    'اسم نوع الخدمة':'Service type name', 'اسم نوع الخدمة بالإنجليزية':'Service type name in English',
     'حالة الخدمة': 'Service activity', 'الخدمة': 'Service', 'تاريخ الموعد': 'Appointment date', 'وقت الموعد': 'Appointment time',
     'اسم الوحدة بالإنجليزية': 'Unit name in English',
     'اسم الخدمة': 'Service name', 'كود الخدمة': 'Service code',
@@ -297,6 +298,10 @@ CHART_NAMES = {
 
 
 ERRORS.update({
+    'اختر نوع خدمة مسجلًا من أنواع الخدمات':'Choose a registered service type.',
+    'اسم نوع الخدمة يجب أن يكون من 1 إلى 120 حرفًا':'Service type names must contain 1 to 120 characters.',
+    'نوع الخدمة موجود بالفعل':'This service type already exists.',
+    'نوع الخدمة مستخدم؛ انقل الخدمات إلى نوع آخر قبل حذفه':'This type is in use. Move its services to another type before deleting it.',
     'المعاينة غير موجودة':'Appointment not found.',
     'اختر فلتر تاريخ صحيحًا للمعاينات':'Choose a valid appointment date filter.',
     'راجع نطاق مواعيد المعاينات':'Check the appointment date range.',

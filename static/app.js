@@ -148,7 +148,7 @@ const modules = {
     groups: [
       [
         "إدارة المخزون",
-        ["products", "services", "branches", "warehouses", "categories", "units"],
+        ["products", "services", "service_types", "branches", "warehouses", "categories", "units"],
       ],
       [
         "الحركات والتوريد",
@@ -482,9 +482,9 @@ function inputField(f, value) {
       f.type === "ref"
         ? (state.boot.refs[f.ref] || []).map((o) => ({
             value: o.id,
-            label: f.ref === "accounts" ? accountLabel(o.name, o) : f.ref === "units" ? unitLabel(o) : f.ref === "services" && o.service_category ? t(o.service_category) + " — " + o.name : o.name,
+            label: f.ref === "accounts" ? accountLabel(o.name, o) : f.ref === "units" ? unitLabel(o) : f.ref === "services" && o.service_category ? serviceCategoryLabel(o.service_category) + " — " + o.name : o.name,
           }))
-        : f.options.map((o) => ({
+        : (key === "service_category" && !f.categoryFilter ? serviceTypeOptions() : f.options).map((o) => ({
             value: typeof o === "object" ? o.value : o,
             label: typeof o === "object" ? o.label : o,
           }));
@@ -507,6 +507,8 @@ function nav(page) {
 }
 async function refreshBoot() {
   state.boot = await api("bootstrap");
+  const category=state.appointmentFilters.service_category;
+  if (category && !(state.boot.refs.service_types || []).some(item=>item.name===category)) delete state.appointmentFilters.service_category;
 }
 function renderAuth(setup, setupTokenRequired = false) {
   state.auth = { setup, setupTokenRequired };
@@ -717,6 +719,7 @@ function display(value, key, spec, row = null) {
     return esc(t(
       { cash: "نقدي", bank: "تحويل بنكي", card: "بطاقة" }[value] || value,
     ));
+  if (key === "service_category") return esc(serviceCategoryLabel(value));
   if (f?.type === "select") {
     const option = f.options.find((o) => String(typeof o === "object" ? o.value : o) === String(value));
     return esc(t(typeof option === "object" ? option.label : option ?? value));
@@ -762,13 +765,23 @@ function table(rows, columns, actions = null, spec = null) {
 function tableTools(count, placeholder = "بحث في السجلات…", extra = "") {
   return `<div class="table-tools"><div class="table-search">${icon("search")}<input id="table-search" type="search" placeholder="${placeholder}" aria-label="${placeholder}"></div><div class="table-controls">${extra}<span class="record-count">${numeric(count)} سجل</span></div></div>`;
 }
+function serviceCategoryLabel(name) {
+  const type=(state.boot?.refs.service_types || []).find(item=>item.name===name);
+  return window.I18n.language === "en" && type?.name_en ? type.name_en : name;
+}
+function serviceTypeOptions() {
+  return (state.boot?.refs.service_types || []).map(item=>({value:item.name,label:serviceCategoryLabel(item.name)}));
+}
+function serviceCategoryFilter(value="") {
+  return inputField({key:"service_category",label:"نوع الخدمة",type:"select",categoryFilter:true,translateOptions:false,options:[{value:"",label:t("الكل")},...serviceTypeOptions()]},value);
+}
 async function resourcePage(name) {
   const spec = state.boot.resources[name];
   state.rows = await api(`resources/${name}`);
   const columns = spec.fields.filter((f) => f.key !== "service_method")
     .slice(0, Math.min(name === "employees" ? 6 : 7, spec.fields.length))
     .map((f) => f.key);
-  return `${pageHeader(spec.label, "أضف بياناتك وحدّثها، وستتاح تلقائيًا في العمليات المرتبطة.", canWriteResource(name) ? button(`${icon("plus")} إضافة ${name === "products" ? "صنف" : name === "services" ? "خدمة" : name === "employees" ? "موظف" : "سجل"}`, "new-resource", "primary", `data-resource="${name}"`) : "")}<section class="panel">${tableTools(state.rows.length)}${state.rows.length ? table(state.rows, columns, (r) => `${button(icon("eye"), "view-resource", "icon-button", `data-id="${r.id}" data-resource="${name}" aria-label="عرض التفاصيل"`)}${canWriteResource(name) ? button(icon("edit"), "edit-resource", "icon-button", `data-id="${r.id}" data-resource="${name}" aria-label="تعديل"`) + button(icon("trash"), "delete-resource", "icon-button danger-text", `data-id="${r.id}" data-resource="${name}" aria-label="حذف"`) : ""}${name === "employees" ? button(icon("file"), "employee-files", "icon-button", `data-id="${r.id}" aria-label="الملفات والعقود"`) : ""}${name === "products" ? button(icon("barcode"), "barcode", "icon-button", `data-id="${r.id}" aria-label="طباعة باركود"`) : ""}`, spec) : empty()}</section>${name === "assets" ? `<div class="inline-note">${icon("info")} تسجيل الأصل لا يسدد تكلفة شرائه تلقائيًا. سجّل قيد اقتناء الأصل في القيود اليومية، ثم احتسب الإهلاك شهريًا.${allowed("accounting", true) ? button("احتساب الإهلاك", "depreciate", "secondary") : ""}</div>` : ""}`;
+  return `${pageHeader(spec.label, "أضف بياناتك وحدّثها، وستتاح تلقائيًا في العمليات المرتبطة.", (name === "services" ? '<a class="btn secondary" href="#/service_types">إدارة أنواع الخدمات</a>' : "") + (canWriteResource(name) ? button(`${icon("plus")} إضافة ${name === "products" ? "صنف" : name === "services" ? "خدمة" : name === "service_types" ? "نوع خدمة" : name === "employees" ? "موظف" : "سجل"}`, "new-resource", "primary", `data-resource="${name}"`) : ""))}<section class="panel">${tableTools(state.rows.length)}${state.rows.length ? table(state.rows, columns, (r) => `${button(icon("eye"), "view-resource", "icon-button", `data-id="${r.id}" data-resource="${name}" aria-label="عرض التفاصيل"`)}${canWriteResource(name) ? button(icon("edit"), "edit-resource", "icon-button", `data-id="${r.id}" data-resource="${name}" aria-label="تعديل"`) + button(icon("trash"), "delete-resource", "icon-button danger-text", `data-id="${r.id}" data-resource="${name}" aria-label="حذف"`) : ""}${name === "employees" ? button(icon("file"), "employee-files", "icon-button", `data-id="${r.id}" aria-label="الملفات والعقود"`) : ""}${name === "products" ? button(icon("barcode"), "barcode", "icon-button", `data-id="${r.id}" aria-label="طباعة باركود"`) : ""}`, spec) : empty()}</section>${name === "assets" ? `<div class="inline-note">${icon("info")} تسجيل الأصل لا يسدد تكلفة شرائه تلقائيًا. سجّل قيد اقتناء الأصل في القيود اليومية، ثم احتسب الإهلاك شهريًا.${allowed("accounting", true) ? button("احتساب الإهلاك", "depreciate", "secondary") : ""}</div>` : ""}`;
 }
 function resourceModal(name, id = null) {
   const spec = state.boot.resources[name],
@@ -792,9 +805,9 @@ async function appointmentsPage() {
   const write=allowed("sales",true), options=Object.entries(appointmentStatuses);
   return `${pageHeader("حجز موعد", "تابع المواعيد والموظفين وحالة الخدمة، وحوّل الموعد إلى عرض سعر أو فاتورة.", write ? button(`${icon("plus")} حجز موعد`,"new-resource","primary",'data-resource="appointments"') : "")}
   <section class="appointments-alert" role="status"><span>${icon("calendar")} <strong>مواعيد اليوم: ${numeric(data.summary.today_count)}</strong> <span>بانتظار الإتمام: ${numeric(data.summary.today_pending_count)}</span> <span>معاينات اليوم: ${numeric(data.summary.today_inspection_count)}</span> <small>${esc(dateLabel(data.today))}</small></span><div>${button("عرض مواعيد اليوم","appointments-today","secondary")}${button("معاينات اليوم","appointments-inspections-today","secondary")}</div></section>
-  <section class="panel"><form id="appointment-filter" class="appointment-filters">${appointmentSelect("day","الموعد",[["today","اليوم"]],f.day)}${appointmentSelect("status","حالة الموعد",[["pending","لم تتم"],["done","تمت"],...options],f.status)}${appointmentSelect("service_status","حالة الخدمة",["تنفيذ","معاينة","متابعة","إعادة العمل"].map(s=>[s,s]),f.service_status)}${appointmentSelect("service_category","نوع الخدمة",[["مكافحة حشرات","مكافحة حشرات"],["تنظيف","تنظيف"]],f.service_category)}${inputField({key:"employee_id",label:"الموظف المسند إليه",type:"ref",ref:"appointment_employees"},f.employee_id)}${inputField({key:"start_date",label:"من تاريخ",type:"date"},f.start_date)}${inputField({key:"end_date",label:"إلى تاريخ",type:"date"},f.end_date)}<button type="submit" class="btn primary">${icon("filter")} تطبيق</button>${button("مسح الفلاتر","appointments-clear","secondary")}</form>
+  <section class="panel"><form id="appointment-filter" class="appointment-filters">${appointmentSelect("day","الموعد",[["today","اليوم"]],f.day)}${appointmentSelect("status","حالة الموعد",[["pending","لم تتم"],["done","تمت"],...options],f.status)}${appointmentSelect("service_status","حالة الخدمة",["تنفيذ","معاينة","متابعة","إعادة العمل"].map(s=>[s,s]),f.service_status)}${serviceCategoryFilter(f.service_category)}${inputField({key:"employee_id",label:"الموظف المسند إليه",type:"ref",ref:"appointment_employees"},f.employee_id)}${inputField({key:"start_date",label:"من تاريخ",type:"date"},f.start_date)}${inputField({key:"end_date",label:"إلى تاريخ",type:"date"},f.end_date)}<button type="submit" class="btn primary">${icon("filter")} تطبيق</button>${button("مسح الفلاتر","appointments-clear","secondary")}</form>
   ${write ? `<div class="appointment-bulkbar"><b><span id="appointment-selection-count">0</span> محدد</b>${button("إسناد لموظف","appointment-bulk","secondary",'data-kind="assign"')}${button("تمت المعاينة","appointment-bulk","secondary",'data-kind="complete"')}${button("تحويل لعرض سعر","appointment-bulk","secondary",'data-kind="quotation"')}${state.boot.kinds.sale ? button("تحويل لفاتورة مبيعات","appointment-bulk","secondary",'data-kind="invoice"') : ""}${button("لم يتم التنفيذ","appointment-bulk","secondary",'data-kind="not_executed"')}${button("إلغاء الموعد","appointment-bulk","secondary",'data-kind="cancel"')}</div>` : ""}
-  ${tableTools(data.items.length,"بحث بالعميل أو الهاتف أو الخدمة…")}${data.items.length ? `<div class="table-scroll"><table class="appointment-table"><thead><tr>${write ? '<th><input type="checkbox" id="appointment-select-all" aria-label="تحديد كل المواعيد الظاهرة"></th>' : ""}${["اسم العميل","الموعد","حالة الخدمة","الخدمة","الموظف المسند إليه","حالة الموعد","الإجراءات"].map(s=>`<th>${esc(t(s))}</th>`).join("")}</tr></thead><tbody>${data.items.map(r=>`<tr data-search="${esc([r.customer_name,r.phone,r.service_name,r.assigned_employee_name].join(' '))}" data-appointment-id="${r.id}">${write ? `<td><input type="checkbox" class="appointment-select" value="${r.id}" aria-label="${esc(t('تحديد الموعد'))} ${esc(r.customer_name)}"></td>` : ""}<td><strong>${esc(r.customer_name)}</strong><small class="block muted">${esc(r.phone)}</small><small class="block muted">${esc(r.address)}</small></td><td>${esc(dateLabel(r.date))}<small class="block muted">${esc(r.time)}</small></td><td>${esc(t(r.service_status))}</td><td>${esc(r.service_name || "—")}<small class="block muted">${esc(t(r.service_category || ""))}</small></td><td>${esc(r.assigned_employee_name || "—")}</td><td>${badge(appointmentStatuses[r.status] || r.status)}</td><td><div class="row-actions">${r.quotation_id ? button("عرض السعر","view-doc","secondary",`data-id="${r.quotation_id}"`) : ""}${r.linked_invoice_id && state.boot.kinds.sale ? button("الفاتورة","view-doc","secondary",`data-id="${r.linked_invoice_id}"`) : ""}${write ? `${!r.quotation_id && !r.linked_invoice_id ? button(icon("edit"),"edit-resource","icon-button",`data-resource="appointments" data-id="${r.id}" aria-label="تعديل"`) : ""}<select class="appointment-row-action" data-id="${r.id}" aria-label="إجراء على الموعد"><option value="">${esc(t("اختر إجراء"))}</option>${[["assign","إسناد لموظف"],["complete","تمت المعاينة"],["quotation","تحويل لعرض سعر"],...(state.boot.kinds.sale ? [["invoice","تحويل لفاتورة مبيعات"]] : []),["not_executed","تمت المعاينة ولم يتم التنفيذ"],["cancel","إلغاء الموعد"],["reopen","إعادة فتح الموعد"]].map(([v,l])=>`<option value="${v}">${esc(t(l))}</option>`).join("")}</select>` : ""}</div></td></tr>`).join("")}</tbody></table></div>` : empty("لا توجد مواعيد مطابقة","غيّر الفلاتر أو أضف موعدًا جديدًا.")}</section>${state.boot.reports.appointment_services ? '<p><a class="text-link" href="#/report_appointment_services">تقرير حالات الخدمة والحسابات</a></p>' : ""}`;
+  ${tableTools(data.items.length,"بحث بالعميل أو الهاتف أو الخدمة…")}${data.items.length ? `<div class="table-scroll"><table class="appointment-table"><thead><tr>${write ? '<th><input type="checkbox" id="appointment-select-all" aria-label="تحديد كل المواعيد الظاهرة"></th>' : ""}${["اسم العميل","الموعد","حالة الخدمة","الخدمة","الموظف المسند إليه","حالة الموعد","الإجراءات"].map(s=>`<th>${esc(t(s))}</th>`).join("")}</tr></thead><tbody>${data.items.map(r=>`<tr data-search="${esc([r.customer_name,r.phone,r.service_name,r.assigned_employee_name].join(' '))}" data-appointment-id="${r.id}">${write ? `<td><input type="checkbox" class="appointment-select" value="${r.id}" aria-label="${esc(t('تحديد الموعد'))} ${esc(r.customer_name)}"></td>` : ""}<td><strong>${esc(r.customer_name)}</strong><small class="block muted">${esc(r.phone)}</small><small class="block muted">${esc(r.address)}</small></td><td>${esc(dateLabel(r.date))}<small class="block muted">${esc(r.time)}</small></td><td>${esc(t(r.service_status))}</td><td>${esc(r.service_name || "—")}<small class="block muted">${esc(serviceCategoryLabel(r.service_category || ""))}</small></td><td>${esc(r.assigned_employee_name || "—")}</td><td>${badge(appointmentStatuses[r.status] || r.status)}</td><td><div class="row-actions">${r.quotation_id ? button("عرض السعر","view-doc","secondary",`data-id="${r.quotation_id}"`) : ""}${r.linked_invoice_id && state.boot.kinds.sale ? button("الفاتورة","view-doc","secondary",`data-id="${r.linked_invoice_id}"`) : ""}${write ? `${!r.quotation_id && !r.linked_invoice_id ? button(icon("edit"),"edit-resource","icon-button",`data-resource="appointments" data-id="${r.id}" aria-label="تعديل"`) : ""}<select class="appointment-row-action" data-id="${r.id}" aria-label="إجراء على الموعد"><option value="">${esc(t("اختر إجراء"))}</option>${[["assign","إسناد لموظف"],["complete","تمت المعاينة"],["quotation","تحويل لعرض سعر"],...(state.boot.kinds.sale ? [["invoice","تحويل لفاتورة مبيعات"]] : []),["not_executed","تمت المعاينة ولم يتم التنفيذ"],["cancel","إلغاء الموعد"],["reopen","إعادة فتح الموعد"]].map(([v,l])=>`<option value="${v}">${esc(t(l))}</option>`).join("")}</select>` : ""}</div></td></tr>`).join("")}</tbody></table></div>` : empty("لا توجد مواعيد مطابقة","غيّر الفلاتر أو أضف موعدًا جديدًا.")}</section>${state.boot.reports.appointment_services ? '<p><a class="text-link" href="#/report_appointment_services">تقرير حالات الخدمة والحسابات</a></p>' : ""}`;
 }
 function selectedAppointments() {
   return $$(".appointment-select:checked").filter(el=>!el.closest('tr').classList.contains('hidden')).map(el=>Number(el.value));
@@ -1047,7 +1060,7 @@ function reportParams() {
 }
 async function reportPage(name) {
   state.reportRows = await api(`reports/${name}`);
-  return `${pageHeader(reportNames[name], "تقرير من البيانات الفعلية. استخدم الفلاتر لتحديد الفترة ونطاق العرض.", button(`${icon("download")} تصدير CSV`, "export-report", "secondary") + button(`${icon("print")} طباعة`, "print-report", "primary"))}<section class="panel"><form id="report-filter" class="report-filter"><label class="field"><span>من تاريخ</span><input type="date" name="from"></label><label class="field"><span>إلى تاريخ</span><input type="date" name="to"></label>${inputField({ key: "branch_id", label: "الفرع (كل الفروع افتراضيًا)", type: "ref", ref: "branches" })}${name === "appointment_services" ? appointmentSelect("service_status","حالة الخدمة",["تنفيذ","معاينة","متابعة","إعادة العمل"].map(s=>[s,s])) + appointmentSelect("service_category","نوع الخدمة",[["مكافحة حشرات","مكافحة حشرات"],["تنظيف","تنظيف"]]) : ""}${
+  return `${pageHeader(reportNames[name], "تقرير من البيانات الفعلية. استخدم الفلاتر لتحديد الفترة ونطاق العرض.", button(`${icon("download")} تصدير CSV`, "export-report", "secondary") + button(`${icon("print")} طباعة`, "print-report", "primary"))}<section class="panel"><form id="report-filter" class="report-filter"><label class="field"><span>من تاريخ</span><input type="date" name="from"></label><label class="field"><span>إلى تاريخ</span><input type="date" name="to"></label>${inputField({ key: "branch_id", label: "الفرع (كل الفروع افتراضيًا)", type: "ref", ref: "branches" })}${name === "appointment_services" ? appointmentSelect("service_status","حالة الخدمة",["تنفيذ","معاينة","متابعة","إعادة العمل"].map(s=>[s,s])) + serviceCategoryFilter() : ""}${
     name === "sales_summary"
       ? inputField(
           {

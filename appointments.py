@@ -99,7 +99,7 @@ def list_appointments(db, params=None):
             raise erp.BusinessError('اختر حالة صحيحة للمعاينة')
         conditions.append('a.status IN (' + ','.join('?' for _ in states) + ')')
         values.extend(states)
-    for key, allowed in (('service_status', ('تنفيذ','معاينة','متابعة','إعادة العمل')), ('service_category', ('مكافحة حشرات','تنظيف'))):
+    for key, allowed in (('service_status', ('تنفيذ','معاينة','متابعة','إعادة العمل')), ('service_category', tuple(r['name'] for r in db.execute('SELECT name FROM service_types')))):
         if params.get(key):
             if params[key] not in allowed:
                 raise erp.BusinessError('اختر حالة أو نوع خدمة صحيحًا')

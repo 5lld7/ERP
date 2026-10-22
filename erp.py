@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('ERP_DATA_DIR', '/tmp/erp' if os.environ.get('VERCEL') else ROOT / '.local')).resolve()
 DB_PATH = DATA / 'erp.sqlite3'
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 class BusinessError(Exception):
@@ -74,9 +74,10 @@ RESOURCES = {
     'branches': dict(label='الفروع', module='inventory', fields=[field('name', 'اسم الفرع', required=True), field('address', 'العنوان'), field('phone', 'الهاتف')]),
     'warehouses': dict(label='المخازن', module='inventory', fields=[field('name', 'اسم المخزن', required=True), field('branch_id', 'الفرع', 'ref', True, ref='branches'), field('address', 'العنوان')]),
     'categories': dict(label='تصنيفات الأصناف', module='inventory', fields=[field('name', 'اسم التصنيف', required=True)]),
+    'service_types': dict(label='أنواع الخدمات', module='inventory', fields=[field('name', 'اسم نوع الخدمة', required=True), field('name_en', 'اسم نوع الخدمة بالإنجليزية')]),
     'units': dict(label='وحدات القياس', module='inventory', fields=[field('name', 'الوحدة', required=True), field('name_en', 'اسم الوحدة بالإنجليزية')]),
     'products': dict(label='الأصناف', module='inventory', fields=[field('name', 'اسم الصنف', required=True), field('sku', 'كود الصنف', required=True), field('barcode', 'الباركود'), field('category_id', 'التصنيف', 'ref', ref='categories'), field('unit_id', 'الوحدة', 'ref', True, ref='units'), field('cost', 'تكلفة الشراء', 'money', True), field('price', 'سعر البيع', 'money', True), field('min_stock', 'حد إعادة الطلب', 'number'), field('expiry_date', 'تاريخ الصلاحية', 'date')]),
-    'services': dict(label='الخدمات', module='inventory', fields=[field('name', 'اسم الخدمة', required=True), field('sku', 'كود الخدمة', required=True), field('service_category', 'نوع الخدمة', 'select', options=['', 'مكافحة حشرات', 'تنظيف']), field('unit_id', 'الوحدة', 'ref', True, ref='units'), field('price', 'سعر الخدمة', 'money', True), field('service_method', 'طريقة عمل الخدمة', 'textarea')]),
+    'services': dict(label='الخدمات', module='inventory', fields=[field('name', 'اسم الخدمة', required=True), field('sku', 'كود الخدمة', required=True), field('service_category', 'نوع الخدمة', 'select', options=[]), field('unit_id', 'الوحدة', 'ref', True, ref='units'), field('price', 'سعر الخدمة', 'money', True), field('service_method', 'طريقة عمل الخدمة', 'textarea')]),
     'appointments': dict(label='حجز موعد', module='sales', fields=[field('customer_name', 'اسم العميل', required=True), field('date', 'تاريخ الموعد', 'date', True), field('time', 'وقت الموعد', 'time', True), field('address', 'العنوان', 'textarea', True), field('phone', 'رقم التليفون', required=True), field('service_status', 'حالة الخدمة', 'select', True, options=['تنفيذ', 'معاينة', 'متابعة', 'إعادة العمل']), field('service_id', 'الخدمة', 'ref', ref='services'), field('site_type', 'نوع الموقع', 'select', True, options=['شقة', 'فيلا', 'تاون فيلا', 'منزل', 'قطعة أرض', 'مبنى حكومي', 'مبنى تجاري'])]),
     'customers': dict(label='العملاء', module='sales', fields=[field('name', 'اسم العميل', required=True), field('phone', 'الهاتف'), field('email', 'البريد الإلكتروني', 'email'), field('address', 'العنوان'), field('tax_number', 'الرقم الضريبي'), field('classification', 'التصنيف', 'select', options=['عادي', 'مميز', 'مؤسسة']), field('credit_limit', 'حد الائتمان (صفر = بدون حد)', 'money'), field('payment_terms', 'شروط الدفع بالأيام', 'number')]),
     'suppliers': dict(label='الموردون', module='accounting', fields=[field('name', 'اسم المورد', required=True), field('phone', 'الهاتف'), field('email', 'البريد الإلكتروني', 'email'), field('address', 'العنوان'), field('tax_number', 'الرقم الضريبي'), field('payment_terms', 'شروط الدفع بالأيام', 'number')]),
@@ -178,6 +179,7 @@ def initialize(path=None):
 
 
 def _initialize_schema(db):
+    had_service_types = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='service_types'").fetchone()
     for name, spec in RESOURCES.items():
         if name == 'services':
             continue
@@ -214,6 +216,11 @@ def _initialize_schema(db):
         for column, definition in additions:
             if column not in existing:
                 db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+    # Seed once so deleted or renamed defaults never return on restart.
+    if not had_service_types:
+        db.execute("INSERT INTO service_types(name,name_en) VALUES('مكافحة حشرات','Pest control'),('تنظيف','Cleaning')")
+        db.execute("INSERT INTO service_types(name,name_en) SELECT DISTINCT service_category,'' FROM products WHERE item_type='service' AND service_category IS NOT NULL AND TRIM(service_category)<>'' AND service_category NOT IN (SELECT name FROM service_types)")
+    db.execute('CREATE UNIQUE INDEX IF NOT EXISTS service_type_name_unique ON service_types(LOWER(name))')
     # Preserve the original booking purpose without overwriting later edits.
     appointment_columns = {r['name'] for r in db.execute('PRAGMA table_info(appointments)')}
     if 'service_type' in appointment_columns:
@@ -369,6 +376,14 @@ def save_resource(db, name, data, uid, eid=None):
                 except ValueError:
                     raise BusinessError('وقت غير صحيح') from None
         values[key] = value
+    if name == 'services' and values.get('service_category'):
+        if not db.execute('SELECT 1 FROM service_types WHERE name=?',(values['service_category'],)).fetchone():
+            raise BusinessError('اختر نوع خدمة مسجلًا من أنواع الخدمات')
+    if name == 'service_types':
+        if not values['name'] or len(values['name'])>120:
+            raise BusinessError('اسم نوع الخدمة يجب أن يكون من 1 إلى 120 حرفًا')
+        if db.execute('SELECT 1 FROM service_types WHERE LOWER(name)=LOWER(?) AND id<>?',(values['name'],eid or 0)).fetchone():
+            raise BusinessError('نوع الخدمة موجود بالفعل')
     if name == 'assets' and (values['life_months'] < 1 or values['life_months'] != int(values['life_months']) or values['salvage'] > values['cost']):
         raise BusinessError('راجع عمر الأصل وقيمته التخريدية')
     if name == 'accounts' and eid and values.get('parent_id'):
@@ -410,6 +425,9 @@ def save_resource(db, name, data, uid, eid=None):
         if name == 'appointments':
             from appointments import _now
             values['updated_at'] = _now()
+        if name == 'service_types':
+            old_name=db.execute('SELECT name FROM service_types WHERE id=?',(eid,)).fetchone()[0]
+            db.execute("UPDATE products SET service_category=? WHERE item_type='service' AND service_category=?",(values['name'],old_name))
         db.execute(f'UPDATE {table} SET '+','.join(f'{k}=?' for k in values)+f' WHERE id=? AND {predicate}',(*values.values(),eid))
     else:
         if name in ('attendance','employee_adjustments') and db.execute('SELECT 1 FROM payroll_lines WHERE employee_id=? AND month=?',(values['employee_id'],values['date'][:7])).fetchone():
