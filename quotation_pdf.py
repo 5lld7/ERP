@@ -24,6 +24,7 @@ LABELS = {
         'amount': 'الإجمالي', 'subtotal': 'المجموع قبل الخصم', 'discount': 'الخصم',
         'tax': 'الضريبة', 'total': 'الإجمالي المستحق', 'tax_number': 'الرقم الضريبي',
         'currency': 'العملة', 'page': 'صفحة', 'footer': 'عرض سعر معاينة — لا يمثل فاتورة ضريبية',
+        'service_method': 'طريقة عمل الخدمة',
     },
     'en': {
         'title': 'Inspection quotation', 'customer': 'Prepared for', 'number': 'Quotation no.',
@@ -32,6 +33,7 @@ LABELS = {
         'amount': 'Amount', 'subtotal': 'Subtotal', 'discount': 'Discount',
         'tax': 'Tax', 'total': 'Grand total', 'tax_number': 'Tax registration no.',
         'currency': 'Currency', 'page': 'Page', 'footer': 'Inspection quotation — this is not a tax invoice',
+        'service_method': 'Service delivery method',
     },
 }
 
@@ -158,8 +160,10 @@ def render_quotation(document, settings, language='ar'):
             if line.get('sku'):
                 description += '\n' + _ltr(line['sku'])
             quantity = _number(line.get('quantity'))
-            if line.get('unit'):
-                quantity += '\n' + _text(line['unit'])
+            unit = line.get('unit_en') if language == 'en' else line.get('unit')
+            unit = unit or line.get('unit')
+            if unit:
+                quantity += '\n' + _text(unit)
             # A valid product name/SKU can be longer than a page. Split only
             # the description into continuation rows rather than truncating it
             # or letting the table reject an oversized row. Prices appear once.
@@ -188,4 +192,24 @@ def render_quotation(document, settings, language='ar'):
     pdf.set_fill_color(*TEAL)
     pdf.text_block(labels['total'] + ': ' + _number(document.get('total'), True) + ' ' + currency,
                    13, bold=True, color=(255, 255, 255), fill=True, padding=4)
+    # Instructions are the server-created snapshot for the chosen service line.
+    # They are customer-facing catalog content, not an arbitrary document note.
+    # Product lines and empty methods must never expose internal notes here.
+    methods = [line for line in document.get('lines') or []
+               if line.get('item_type') == 'service' and _text(line.get('service_method'))]
+    if methods:
+        if pdf.y + 35 > pdf.page_break_trigger:
+            pdf.add_page()
+        pdf.ln(9)
+        pdf.text_block(labels['service_method'], 14, bold=True, color=TEAL)
+        pdf.ln(3)
+        for line in methods:
+            if pdf.y + 22 > pdf.page_break_trigger:
+                pdf.add_page()
+            pdf.set_fill_color(*LIGHT)
+            pdf.text_block(line.get('name') or labels['item'], 11, bold=True,
+                           color=NAVY, fill=True, padding=3)
+            pdf.ln(2)
+            pdf.text_block(line['service_method'], 9)
+            pdf.ln(5)
     return bytes(pdf.output())

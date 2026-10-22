@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('ERP_DATA_DIR', '/tmp/erp' if os.environ.get('VERCEL') else ROOT / '.local')).resolve()
 DB_PATH = DATA / 'erp.sqlite3'
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class BusinessError(Exception):
@@ -74,13 +74,15 @@ RESOURCES = {
     'branches': dict(label='الفروع', module='inventory', fields=[field('name', 'اسم الفرع', required=True), field('address', 'العنوان'), field('phone', 'الهاتف')]),
     'warehouses': dict(label='المخازن', module='inventory', fields=[field('name', 'اسم المخزن', required=True), field('branch_id', 'الفرع', 'ref', True, ref='branches'), field('address', 'العنوان')]),
     'categories': dict(label='تصنيفات الأصناف', module='inventory', fields=[field('name', 'اسم التصنيف', required=True)]),
-    'units': dict(label='وحدات القياس', module='inventory', fields=[field('name', 'الوحدة', required=True)]),
+    'units': dict(label='وحدات القياس', module='inventory', fields=[field('name', 'الوحدة', required=True), field('name_en', 'اسم الوحدة بالإنجليزية')]),
     'products': dict(label='الأصناف', module='inventory', fields=[field('name', 'اسم الصنف', required=True), field('sku', 'كود الصنف', required=True), field('barcode', 'الباركود'), field('category_id', 'التصنيف', 'ref', ref='categories'), field('unit_id', 'الوحدة', 'ref', True, ref='units'), field('cost', 'تكلفة الشراء', 'money', True), field('price', 'سعر البيع', 'money', True), field('min_stock', 'حد إعادة الطلب', 'number'), field('expiry_date', 'تاريخ الصلاحية', 'date')]),
-    'customers': dict(label='العملاء', module='sales', fields=[field('name', 'اسم العميل', required=True), field('phone', 'الهاتف'), field('email', 'البريد الإلكتروني', 'email'), field('address', 'العنوان'), field('tax_number', 'الرقم الضريبي'), field('classification', 'التصنيف', 'select', options=['عادي', 'مميز', 'جملة']), field('credit_limit', 'حد الائتمان (صفر = بدون حد)', 'money'), field('payment_terms', 'شروط الدفع بالأيام', 'number')]),
+    'services': dict(label='الخدمات', module='inventory', fields=[field('name', 'اسم الخدمة', required=True), field('sku', 'كود الخدمة', required=True), field('unit_id', 'الوحدة', 'ref', True, ref='units'), field('price', 'سعر الخدمة', 'money', True), field('service_method', 'طريقة عمل الخدمة', 'textarea')]),
+    'appointments': dict(label='حجز موعد معاينة', module='sales', fields=[field('customer_name', 'اسم العميل', required=True), field('date', 'تاريخ المعاينة', 'date', True), field('time', 'وقت المعاينة', 'time', True), field('address', 'العنوان', 'textarea', True), field('phone', 'رقم التليفون', required=True), field('service_type', 'نوع الخدمة', 'select', True, options=['تنفيذ', 'معاينة', 'متابعة', 'إعادة عمل']), field('site_type', 'نوع الموقع', 'select', True, options=['شقة', 'فيلا', 'تاون فيلا', 'منزل', 'قطعة أرض', 'مبنى حكومي', 'مبنى تجاري'])]),
+    'customers': dict(label='العملاء', module='sales', fields=[field('name', 'اسم العميل', required=True), field('phone', 'الهاتف'), field('email', 'البريد الإلكتروني', 'email'), field('address', 'العنوان'), field('tax_number', 'الرقم الضريبي'), field('classification', 'التصنيف', 'select', options=['عادي', 'مميز', 'مؤسسة']), field('credit_limit', 'حد الائتمان (صفر = بدون حد)', 'money'), field('payment_terms', 'شروط الدفع بالأيام', 'number')]),
     'suppliers': dict(label='الموردون', module='accounting', fields=[field('name', 'اسم المورد', required=True), field('phone', 'الهاتف'), field('email', 'البريد الإلكتروني', 'email'), field('address', 'العنوان'), field('tax_number', 'الرقم الضريبي'), field('payment_terms', 'شروط الدفع بالأيام', 'number')]),
     'departments': dict(label='الإدارات والأقسام', module='hr', fields=[field('name', 'اسم الإدارة', required=True)]),
     'jobs': dict(label='الوظائف', module='hr', fields=[field('name', 'المسمى الوظيفي', required=True)]),
-    'employees': dict(label='الموظفون', module='hr', fields=[field('name', 'اسم الموظف', required=True), field('code', 'الكود الوظيفي', required=True), field('national_id', 'الرقم القومي'), field('phone', 'الهاتف'), field('department_id', 'الإدارة', 'ref', ref='departments'), field('job_id', 'الوظيفة', 'ref', ref='jobs'), field('branch_id', 'الفرع', 'ref', True, ref='branches'), field('hire_date', 'تاريخ التعيين', 'date', True), field('contract_end', 'نهاية العقد', 'date'), field('salary', 'الراتب الأساسي', 'money', True), field('allowance', 'البدلات الشهرية', 'money'), field('overtime_rate', 'أجر الساعة الإضافية', 'money'), field('leave_balance', 'رصيد الإجازات السنوي', 'number'), field('status', 'حالة الموظف', 'select', True, options=['نشط', 'موقوف', 'منتهية'])]),
+    'employees': dict(label='الموظفون', module='hr', fields=[field('name', 'اسم الموظف', required=True), field('code', 'الكود الوظيفي', required=True), field('national_id', 'رقم البطاقة أو الإقامة'), field('nationality', 'الجنسية'), field('residency_expiry', 'تاريخ انتهاء الإقامة', 'date'), field('passport_expiry', 'تاريخ انتهاء جواز السفر', 'date'), field('driving_license_expiry', 'تاريخ انتهاء رخصة القيادة', 'date'), field('phone', 'الهاتف'), field('department_id', 'الإدارة', 'ref', ref='departments'), field('job_id', 'الوظيفة', 'ref', ref='jobs'), field('branch_id', 'الفرع', 'ref', True, ref='branches'), field('hire_date', 'تاريخ التعيين', 'date', True), field('contract_end', 'نهاية العقد', 'date'), field('salary', 'الراتب الأساسي', 'money', True), field('allowance', 'البدلات الشهرية', 'money'), field('overtime_rate', 'أجر الساعة الإضافية', 'money'), field('leave_balance', 'رصيد الإجازات السنوي', 'number'), field('status', 'حالة الموظف', 'select', True, options=['نشط', 'موقوف', 'منتهية'])]),
     'attendance': dict(label='الحضور والانصراف', module='hr', fields=[field('employee_id', 'الموظف', 'ref', True, ref='employees'), field('date', 'التاريخ', 'date', True), field('check_in', 'وقت الحضور', 'time'), field('check_out', 'وقت الانصراف', 'time'), field('status', 'الحالة', 'select', True, options=['حاضر', 'غائب', 'إجازة']), field('overtime_hours', 'ساعات إضافية', 'number'), field('deduction', 'خصم', 'money'), field('note', 'ملاحظات')]),
     'employee_adjustments': dict(label='المكافآت والخصومات', module='hr', fields=[field('employee_id', 'الموظف', 'ref', True, ref='employees'), field('date', 'التاريخ', 'date', True), field('type', 'نوع التسوية', 'select', True, options=['مكافأة', 'خصم']), field('amount', 'المبلغ', 'money', True), field('note', 'البيان')]),
     'leaves': dict(label='طلبات الإجازة', module='hr', fields=[field('employee_id', 'الموظف', 'ref', True, ref='employees'), field('start_date', 'من تاريخ', 'date', True), field('end_date', 'إلى تاريخ', 'date', True), field('type', 'نوع الإجازة', 'select', True, options=['سنوية', 'مرضية', 'بدون راتب']), field('reason', 'السبب'), field('status', 'الحالة', 'select', True, options=['قيد المراجعة', 'معتمدة', 'مرفوضة'])]),
@@ -89,7 +91,7 @@ RESOURCES = {
     'accounts': dict(label='شجرة الحسابات', module='accounting', fields=[field('code', 'رقم الحساب', required=True), field('name', 'اسم الحساب', required=True), field('type', 'نوع الحساب', 'select', True, options=['أصول', 'التزامات', 'حقوق ملكية', 'إيرادات', 'مصروفات']), field('parent_id', 'الحساب الأب', 'ref', ref='accounts')]),
 }
 
-SQL_TYPES = {'money': 'INTEGER NOT NULL DEFAULT 0', 'number': 'REAL NOT NULL DEFAULT 0', 'ref': 'INTEGER', 'text': 'TEXT', 'date': 'TEXT', 'email': 'TEXT', 'time': 'TEXT', 'select': 'TEXT'}
+SQL_TYPES = {'money': 'INTEGER NOT NULL DEFAULT 0', 'number': 'REAL NOT NULL DEFAULT 0', 'ref': 'INTEGER', 'text': 'TEXT', 'date': 'TEXT', 'email': 'TEXT', 'time': 'TEXT', 'select': 'TEXT', 'textarea': 'TEXT'}
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -110,6 +112,8 @@ CREATE TABLE IF NOT EXISTS depreciation (id INTEGER PRIMARY KEY, asset_id INTEGE
 CREATE TABLE IF NOT EXISTS employee_files (id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id), name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, content BLOB NOT NULL, uploaded_by INTEGER NOT NULL REFERENCES users(id), created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS auth_attempts (key TEXT PRIMARY KEY, attempts INTEGER NOT NULL, started_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS document_shares (id INTEGER PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE, pdf BLOB NOT NULL, language TEXT NOT NULL, currency TEXT NOT NULL, expires_at INTEGER NOT NULL, created_by INTEGER NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),event_key TEXT NOT NULL,kind TEXT NOT NULL,title TEXT NOT NULL,detail TEXT NOT NULL DEFAULT '',link TEXT NOT NULL,created_at INTEGER NOT NULL,read_at INTEGER,active INTEGER NOT NULL DEFAULT 1,UNIQUE(user_id,event_key));
+CREATE INDEX IF NOT EXISTS notifications_user_unread ON notifications(user_id,read_at,id);
 CREATE INDEX IF NOT EXISTS share_expiry ON document_shares(expires_at);
 CREATE INDEX IF NOT EXISTS doc_kind_date ON documents(kind,date);
 CREATE INDEX IF NOT EXISTS move_lookup ON stock_moves(warehouse_id,product_id,date);
@@ -126,12 +130,12 @@ CHART = [
 ]
 KINDS = {
     'purchase': ['فاتورة مشتريات', 'accounting', 'PUR'], 'purchase_return': ['مرتجع مشتريات', 'accounting', 'PRT'],
-    'purchase_order': ['أمر شراء', 'inventory', 'PO'], 'receipt': ['استلام أصناف / رصيد افتتاحي', 'inventory', 'REC'],
+    'purchase_order': ['أمر شراء', 'inventory', 'PO'], 'receipt': ['استلام أصناف', 'inventory', 'REC'],
     'sale': ['فاتورة مبيعات', 'sales', 'SAL'], 'sale_return': ['مرتجع مبيعات', 'sales', 'SRT'],
     'inspection': ['معاينة وعرض سعر', 'sales', 'INS'], 'transfer': ['تحويل بين المخازن', 'inventory', 'TRF'],
     'issue': ['صرف / تالف', 'inventory', 'ISS'], 'adjustment': ['جرد وتسوية مخزون', 'inventory', 'ADJ'],
 }
-ROLES = {'admin': 'مدير النظام', 'accounting': 'محاسب', 'inventory': 'مسؤول المخزن', 'sales': 'مسؤول المبيعات', 'hr': 'الموارد البشرية', 'viewer': 'مشاهدة عامة'}
+ROLES = {'admin': 'مدير النظام', 'accounting': 'محاسب', 'inventory': 'مسؤول المخزن', 'sales': 'مسؤول المبيعات', 'hr': 'الموارد البشرية', 'viewer': 'مشاهدة عامة', 'technician': 'فني'}
 
 
 def connect(path=None):
@@ -175,6 +179,8 @@ def initialize(path=None):
 
 def _initialize_schema(db):
     for name, spec in RESOURCES.items():
+        if name == 'services':
+            continue
         columns = ['id INTEGER PRIMARY KEY']
         for f in spec['fields']:
             col = f'{f["key"]} {SQL_TYPES[f["type"]]}'
@@ -183,9 +189,26 @@ def _initialize_schema(db):
             columns.append(col)
         columns.append('created_at TEXT DEFAULT CURRENT_TIMESTAMP')
         db.execute(f'CREATE TABLE IF NOT EXISTS {name} ({",".join(columns)})')
+        existing = {row['name'] for row in db.execute(f'PRAGMA table_info({name})')}
+        for f in spec['fields']:
+            if f['key'] not in existing:
+                definition = SQL_TYPES[f['type']]
+                if f['type'] == 'ref':
+                    definition += f' REFERENCES {f["ref"]}(id)'
+                db.execute(f'ALTER TABLE {name} ADD COLUMN {f["key"]} {definition}')
     for statement in SCHEMA.split(';'):
         if statement.strip():
             db.execute(statement)
+    for table, additions in {
+        'products': [('item_type', "TEXT NOT NULL DEFAULT 'product'"), ('service_method', "TEXT NOT NULL DEFAULT ''")],
+        'units': [('code', 'TEXT')],
+        'document_lines': [('service_method', "TEXT NOT NULL DEFAULT ''")],
+    }.items():
+        existing = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
+        for column, definition in additions:
+            if column not in existing:
+                db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+    db.execute("UPDATE customers SET classification='مؤسسة' WHERE classification='جملة'")
     doc_columns={r['name'] for r in db.execute('PRAGMA table_info(documents)')}
     for column,definition in [('progress',"TEXT NOT NULL DEFAULT 'جديدة'"),('appointment_date','TEXT'),('location','TEXT')]:
         if column not in doc_columns:
@@ -204,7 +227,8 @@ def _initialize_schema(db):
         db.execute("INSERT INTO branches(name) VALUES('الفرع الرئيسي')")
         branch = db.execute('SELECT id FROM branches LIMIT 1').fetchone()[0]
         db.execute("INSERT INTO warehouses(name,branch_id) VALUES('المخزن الرئيسي',?)", (branch,))
-        db.execute("INSERT INTO units(name) VALUES('قطعة')")
+    from units_catalog import seed_units
+    seed_units(db)
 
 
 @contextmanager
@@ -246,7 +270,11 @@ def settings(db):
 
 
 def can(user, module, write=False):
-    return user['role'] == 'admin' or (module!='admin' and ((user['role'] == 'viewer' and not write) or user['role'] == module))
+    return user['role'] == 'admin' or (module!='admin' and ((user['role'] == 'viewer' and not write) or user['role'] == module or (user['role']=='technician' and module=='sales')))
+
+
+def document_allowed(user, kind, write=False):
+    return kind in KINDS and (user['role']!='technician' or kind=='inspection') and can(user,KINDS[kind][1],write)
 
 
 def require(user, module, write=False):
@@ -262,12 +290,26 @@ def serialize_row(row, spec):
     return result
 
 
+def resource_table(name):
+    if name not in RESOURCES:
+        raise BusinessError('القسم غير موجود')
+    return 'products' if name=='services' else name
+
+
+def resource_filter(name):
+    resource_table(name)
+    if name in ('products','services'):
+        return "COALESCE(item_type,'product')='" + ('service' if name=='services' else 'product') + "'"
+    return '1=1'
+
+
 def list_resource(db, name):
-    return [serialize_row(r,RESOURCES[name]) for r in db.execute(f'SELECT * FROM {name} ORDER BY id DESC')]
+    return [serialize_row(r,RESOURCES[name]) for r in db.execute(f'SELECT * FROM {resource_table(name)} WHERE {resource_filter(name)} ORDER BY id DESC')]
 
 
 def save_resource(db, name, data, uid, eid=None):
     spec = RESOURCES[name]
+    table, predicate = resource_table(name), resource_filter(name)
     values = {}
     for f in spec['fields']:
         key, kind = f['key'], f['type']
@@ -289,7 +331,7 @@ def save_resource(db, name, data, uid, eid=None):
         elif kind == 'date':
             value = valid_date(value) if value else None
         else:
-            value = str(value or '').strip()[:2000]
+            value = str(value or '').strip()[:10000 if key=='service_method' else 2000]
             if f.get('options') and value not in f['options']:
                 raise BusinessError(f'اختر قيمة صحيحة لحقل {f["label"]}')
             if kind == 'time' and value:
@@ -328,7 +370,7 @@ def save_resource(db, name, data, uid, eid=None):
             if used+days > emp['leave_balance']:
                 raise BusinessError('رصيد الإجازات السنوية غير كافٍ')
     if eid:
-        if not db.execute(f'SELECT 1 FROM {name} WHERE id=?',(eid,)).fetchone():
+        if not db.execute(f'SELECT 1 FROM {table} WHERE id=? AND {predicate}',(eid,)).fetchone():
             raise BusinessError('السجل غير موجود')
         # Already processed payroll cannot silently change when attendance is edited.
         if name in ('attendance','employee_adjustments'):
@@ -336,11 +378,13 @@ def save_resource(db, name, data, uid, eid=None):
             for employee_id, date in [(old['employee_id'],old['date']),(values['employee_id'],values['date'])]:
                 if db.execute('SELECT 1 FROM payroll_lines WHERE employee_id=? AND month=?',(employee_id,date[:7])).fetchone():
                     raise BusinessError('حضور هذا الشهر مستخدم في مسير رواتب مرحّل')
-        db.execute(f'UPDATE {name} SET '+','.join(f'{k}=?' for k in values)+' WHERE id=?',(*values.values(),eid))
+        db.execute(f'UPDATE {table} SET '+','.join(f'{k}=?' for k in values)+f' WHERE id=? AND {predicate}',(*values.values(),eid))
     else:
         if name in ('attendance','employee_adjustments') and db.execute('SELECT 1 FROM payroll_lines WHERE employee_id=? AND month=?',(values['employee_id'],values['date'][:7])).fetchone():
             raise BusinessError('تم ترحيل راتب هذا الشهر بالفعل')
-        eid = db.execute(f'INSERT INTO {name} ({",".join(values)}) VALUES({",".join("?" for _ in values)})',tuple(values.values())).lastrowid
+        if name in ('products','services'):
+            values['item_type'] = 'service' if name=='services' else 'product'
+        eid = db.execute(f'INSERT INTO {table} ({",".join(values)}) VALUES({",".join("?" for _ in values)})',tuple(values.values())).lastrowid
     audit(db,uid,'حفظ',name,eid)
     return eid
 
@@ -366,6 +410,9 @@ def journal(db, date, description, lines, uid, source_type=None, source_id=None)
 
 
 def move_stock(db, wid, pid, qty, cost, date, reason, did=None):
+    product = db.execute('SELECT item_type FROM products WHERE id=?',(pid,)).fetchone()
+    if product and product['item_type']=='service':
+        raise BusinessError('الخدمات لا تدخل في حركات المخزون')
     stock = db.execute('SELECT * FROM stock WHERE warehouse_id=? AND product_id=?',(wid,pid)).fetchone()
     old_qty, old_cost = (stock['quantity'],stock['avg_cost']) if stock else (0,0)
     new_qty = round(old_qty+qty,3)
@@ -385,11 +432,22 @@ def party_balance(db, kind, pid):
     return row[0] * (1 if kind=='customer' else -1)
 
 
+def effective_price(db, product_id, customer_id, date):
+    """Return the stored minor-unit price, matching the catalogue offer order."""
+    offer = db.execute('SELECT price FROM price_lists WHERE product_id=? AND (customer_id IS NULL OR customer_id=?) AND start_date<=? AND end_date>=? ORDER BY CASE WHEN customer_id IS NULL THEN 1 ELSE 0 END,id DESC LIMIT 1',
+                       (product_id,customer_id,date,date)).fetchone()
+    if offer is not None:
+        return offer['price']
+    row = db.execute('SELECT price FROM products WHERE id=?',(product_id,)).fetchone()
+    return row['price'] if row else 0
+
+
 def save_document(db, data, user):
     kind = data.get('kind')
     if kind not in KINDS:
         raise BusinessError('نوع المستند غير صحيح')
-    require(user,KINDS[kind][1],True)
+    if not document_allowed(user,kind,True):
+        raise PermissionError('ليس لديك صلاحية لتنفيذ هذه العملية')
     date = valid_date(data.get('date',today()))
     wid = int(data.get('warehouse_id') or 0)
     if not db.execute('SELECT 1 FROM warehouses WHERE id=?',(wid,)).fetchone():
@@ -410,28 +468,38 @@ def save_document(db, data, user):
     raw = data.get('lines',[])
     if not isinstance(raw,list) or not raw or len(raw)>500:
         raise BusinessError('أضف أصناف المستند (بحد أقصى 500 سطر)')
+    locked_quote = kind=='inspection' and user['role']!='admin'
+    company_settings = settings(db)
     lines, seen = [], set()
     for item in raw:
         pid = int(item.get('product_id') or 0)
         product = db.execute('SELECT * FROM products WHERE id=?',(pid,)).fetchone()
         if not product or pid in seen:
             raise BusinessError('الصنف غير موجود أو مكرر؛ اجمع الكمية في سطر واحد')
+        if product['item_type']=='service' and kind not in ('sale','sale_return','inspection'):
+            raise BusinessError('الخدمات متاحة في المعاينات والمبيعات فقط')
         seen.add(pid)
         qty = number(item.get('quantity'),kind!='adjustment')
         if qty < 0:
             raise BusinessError('كمية الجرد لا تقبل السالب')
-        price = money(item.get('price'))
+        expected_price = effective_price(db,pid,cid,date) if locked_quote else None
+        price = money(item.get('price', amount(expected_price) if locked_quote else 0))
         if price<0:
             raise BusinessError('السعر لا يقبل السالب')
+        if locked_quote and price!=expected_price:
+            raise PermissionError('تعديل سعر عرض السعر متاح للمدير فقط')
         if kind == 'sale' and product['expiry_date'] and product['expiry_date'] < date:
             raise BusinessError('لا يمكن بيع صنف منتهي الصلاحية')
-        lines.append(dict(product_id=pid,quantity=qty,price=price,total=rounded(Decimal(str(qty))*price)))
+        lines.append(dict(product_id=pid,quantity=qty,price=price,total=rounded(Decimal(str(qty))*price),
+                          service_method=product['service_method'] if product['item_type']=='service' else ''))
     subtotal = sum(l['total'] for l in lines)
     discount = money(data.get('discount'))
-    tax_rate = number(data.get('tax_rate',0))
+    tax_rate = number(data.get('tax_rate',company_settings['tax_rate'] if locked_quote else 0))
+    if locked_quote and (discount or tax_rate!=company_settings['tax_rate']):
+        raise PermissionError('تعديل الخصم والضريبة في عرض السعر متاح للمدير فقط')
     if discount<0 or discount>subtotal or not 0<=tax_rate<=100:
         raise BusinessError('راجع قيمة الخصم ونسبة الضريبة')
-    if kind in ('sale','inspection') and subtotal and discount*100/subtotal > settings(db)['discount_limit']:
+    if kind in ('sale','inspection') and subtotal and discount*100/subtotal > company_settings['discount_limit']:
         raise BusinessError('الخصم يتجاوز الحد المسموح في إعدادات المبيعات')
     tax = rounded(Decimal(subtotal-discount)*Decimal(str(tax_rate))/100)
     total = subtotal-discount+tax
@@ -465,6 +533,10 @@ def save_document(db, data, user):
                 raise BusinessError('مبلغ السداد يتجاوز إجمالي المرتجع بعد تطبيق خصم الفاتورة الأصلية')
         elif db.execute("SELECT 1 FROM documents WHERE source_id=? AND kind=? AND status='posted'",(source,kind)).fetchone():
             raise BusinessError('تم تحويل هذا المستند إلى فاتورة بالفعل')
+        for line in lines:
+            original = db.execute('SELECT service_method FROM document_lines WHERE document_id=? AND product_id=?',(source,line['product_id'])).fetchone()
+            if original is not None:
+                line['service_method'] = original['service_method']
     elif kind in ('sale_return','purchase_return'):
         raise BusinessError('اختر الفاتورة الأصلية للمرتجع')
     due = valid_date(data['due_date']) if data.get('due_date') else date
@@ -477,7 +549,7 @@ def save_document(db, data, user):
         appointment=valid_date(data['appointment_date']) if data.get('appointment_date') else None
         db.execute('UPDATE documents SET appointment_date=?,location=? WHERE id=?',(appointment,str(data.get('location',''))[:1000],did))
     for l in lines:
-        db.execute('INSERT INTO document_lines(document_id,product_id,quantity,price,total) VALUES(?,?,?,?,?)',(did,l['product_id'],l['quantity'],l['price'],l['total']))
+        db.execute('INSERT INTO document_lines(document_id,product_id,quantity,price,total,service_method) VALUES(?,?,?,?,?,?)',(did,l['product_id'],l['quantity'],l['price'],l['total'],l['service_method']))
     audit(db,user['id'],'إنشاء مستند','documents',did,docnum)
     if data.get('post',True):
         post_document(db,did,user)
@@ -489,7 +561,8 @@ def post_document(db, did, user):
     if not doc or doc['status']!='draft':
         raise BusinessError('المستند غير موجود أو تم ترحيله بالفعل')
     kind, date = doc['kind'], doc['date']
-    require(user,KINDS[kind][1],True)
+    if not document_allowed(user,kind,True):
+        raise PermissionError('ليس لديك صلاحية لتنفيذ هذه العملية')
     lines = db.execute('SELECT * FROM document_lines WHERE document_id=?',(did,)).fetchall()
     cid, sid, total, tax, paid = doc['customer_id'],doc['supplier_id'],doc['total'],doc['tax'],doc['paid']
     if kind == 'sale':
@@ -516,6 +589,12 @@ def post_document(db, did, user):
     allocated_purchase = 0
     for index,l in enumerate(lines):
         pid, qty = l['product_id'],l['quantity']
+        product = db.execute('SELECT item_type FROM products WHERE id=?',(pid,)).fetchone()
+        if product['item_type']=='service':
+            if kind not in ('sale','sale_return','inspection'):
+                raise BusinessError('الخدمات متاحة في المعاينات والمبيعات فقط')
+            db.execute('UPDATE document_lines SET cost=0 WHERE id=?',(l['id'],))
+            continue
         old = db.execute('SELECT * FROM stock WHERE warehouse_id=? AND product_id=?',(doc['warehouse_id'],pid)).fetchone()
         cost = old['avg_cost'] if old else db.execute('SELECT cost FROM products WHERE id=?',(pid,)).fetchone()[0]
         if kind=='purchase':
@@ -725,7 +804,7 @@ def document_detail(db,did):
     for k in ('subtotal','discount','tax','total','paid'):
         doc[k]=amount(doc[k])
     doc['lines']=[]
-    for row in db.execute('SELECT l.*,p.name,p.sku,p.barcode,u.name unit FROM document_lines l JOIN products p ON p.id=l.product_id LEFT JOIN units u ON u.id=p.unit_id WHERE document_id=?',(did,)):
+    for row in db.execute('SELECT l.*,p.name,p.sku,p.barcode,p.item_type,u.name unit,u.name_en unit_en,u.code unit_code FROM document_lines l JOIN products p ON p.id=l.product_id LEFT JOIN units u ON u.id=p.unit_id WHERE document_id=?',(did,)):
         line=dict(row)
         for k in ('price','total','cost'):
             line[k]=amount(line[k])
@@ -741,7 +820,7 @@ def report(db,name,params):
         raise BusinessError('راجع نطاق التقرير')
     rows=[]
     if name=='stock':
-        rows=db.execute('SELECT p.id,p.sku,p.name,p.barcode,w.name warehouse,b.name branch,COALESCE(s.quantity,0) quantity,COALESCE(s.avg_cost,p.cost)/100.0 cost,ROUND(COALESCE(s.quantity*s.avg_cost,0)/100.0,2) value,p.min_stock,p.expiry_date FROM products p CROSS JOIN warehouses w JOIN branches b ON b.id=w.branch_id LEFT JOIN stock s ON s.product_id=p.id AND s.warehouse_id=w.id WHERE (?=0 OR b.id=?) ORDER BY p.name,w.name',(branch,branch)).fetchall()
+        rows=db.execute("SELECT p.id,p.sku,p.name,p.barcode,w.name warehouse,b.name branch,COALESCE(s.quantity,0) quantity,COALESCE(s.avg_cost,p.cost)/100.0 cost,ROUND(COALESCE(s.quantity*s.avg_cost,0)/100.0,2) value,p.min_stock,p.expiry_date FROM products p CROSS JOIN warehouses w JOIN branches b ON b.id=w.branch_id LEFT JOIN stock s ON s.product_id=p.id AND s.warehouse_id=w.id WHERE COALESCE(p.item_type,'product')!='service' AND (?=0 OR b.id=?) ORDER BY p.name,w.name",(branch,branch)).fetchall()
     elif name=='moves':
         rows=db.execute('SELECT m.date,p.name product,w.name warehouse,m.quantity,m.cost/100.0 cost,m.reason,d.number document FROM stock_moves m JOIN products p ON p.id=m.product_id JOIN warehouses w ON w.id=m.warehouse_id LEFT JOIN documents d ON d.id=m.document_id WHERE m.date BETWEEN ? AND ? AND (?=0 OR w.branch_id=?) ORDER BY m.id DESC',(start,end,branch,branch)).fetchall()
     elif name=='trial_balance':
@@ -793,7 +872,11 @@ def report(db,name,params):
 
 def dashboard(db,user):
     result={}
-    if can(user,'sales'):
+    if user['role']=='technician':
+        result['customers']=db.execute('SELECT COUNT(*) FROM customers').fetchone()[0]
+        result['pending_inspections']=db.execute("SELECT COUNT(*) FROM documents d WHERE kind='inspection' AND NOT EXISTS(SELECT 1 FROM documents s WHERE s.source_id=d.id AND s.kind='sale' AND s.status='posted')").fetchone()[0]
+        result['appointments']=db.execute('SELECT COUNT(*) FROM appointments WHERE date>=?',(today(),)).fetchone()[0]
+    elif can(user,'sales'):
         result['sales']=amount(db.execute("SELECT COALESCE(SUM(CASE WHEN kind='sale' THEN total ELSE -total END),0) FROM documents WHERE status='posted' AND kind IN ('sale','sale_return') AND substr(date,1,7)=?",(today()[:7],)).fetchone()[0])
         result['customers']=db.execute('SELECT COUNT(*) FROM customers').fetchone()[0]
         result['pending_inspections']=db.execute("SELECT COUNT(*) FROM documents d WHERE kind='inspection' AND NOT EXISTS(SELECT 1 FROM documents s WHERE s.source_id=d.id AND s.kind='sale' AND s.status='posted')").fetchone()[0]
@@ -807,9 +890,9 @@ def dashboard(db,user):
         result['chart']=months
     if can(user,'inventory'):
         result['stock_value']=amount(round(db.execute('SELECT COALESCE(SUM(quantity*avg_cost),0) FROM stock').fetchone()[0]))
-        result['products']=db.execute('SELECT COUNT(*) FROM products').fetchone()[0]
-        result['low_stock']=[dict(r) for r in db.execute('SELECT p.id,p.name,p.min_stock,COALESCE(SUM(s.quantity),0) quantity FROM products p LEFT JOIN stock s ON s.product_id=p.id GROUP BY p.id HAVING quantity<=p.min_stock ORDER BY quantity LIMIT 6')]
-        result['expiring']=[dict(r) for r in db.execute("SELECT id,name,expiry_date FROM products WHERE expiry_date IS NOT NULL AND expiry_date<=date(?,'+30 days') ORDER BY expiry_date LIMIT 6",(today(),))]
+        result['products']=db.execute("SELECT COUNT(*) FROM products WHERE COALESCE(item_type,'product')!='service'").fetchone()[0]
+        result['low_stock']=[dict(r) for r in db.execute("SELECT p.id,p.name,p.min_stock,COALESCE(SUM(s.quantity),0) quantity FROM products p LEFT JOIN stock s ON s.product_id=p.id WHERE COALESCE(p.item_type,'product')!='service' GROUP BY p.id HAVING COALESCE(SUM(s.quantity),0)<=p.min_stock ORDER BY quantity LIMIT 6")]
+        result['expiring']=[dict(r) for r in db.execute("SELECT id,name,expiry_date FROM products WHERE COALESCE(item_type,'product')!='service' AND expiry_date IS NOT NULL AND expiry_date<=date(?,'+30 days') ORDER BY expiry_date LIMIT 6",(today(),))]
     if can(user,'accounting'):
         result['receivables']=amount(db.execute('SELECT COALESCE(SUM(debit-credit),0) FROM journal_lines WHERE account_id=?',(account_id(db,'1200'),)).fetchone()[0])
         result['payables']=amount(db.execute('SELECT COALESCE(SUM(credit-debit),0) FROM journal_lines WHERE account_id=?',(account_id(db,'2100'),)).fetchone()[0])
@@ -817,7 +900,7 @@ def dashboard(db,user):
     if can(user,'hr'):
         result['employees']=db.execute("SELECT COUNT(*) FROM employees WHERE status='نشط'").fetchone()[0]
         result['pending_leaves']=db.execute("SELECT COUNT(*) FROM leaves WHERE status='قيد المراجعة'").fetchone()[0]
-    allowed=[k for k,s in KINDS.items() if can(user,s[1])]
+    allowed=[kind for kind in KINDS if document_allowed(user,kind)]
     marks=','.join('?' for _ in allowed)
     result['recent_documents']=[dict(r) for r in db.execute(f'SELECT d.id,d.number,d.date,d.kind,d.status,COALESCE(c.name,s.name,\'حركة مخزون\') party,d.total/100.0 total FROM documents d LEFT JOIN customers c ON c.id=d.customer_id LEFT JOIN suppliers s ON s.id=d.supplier_id WHERE d.kind IN ({marks}) ORDER BY d.id DESC LIMIT 6',allowed)]
     return result

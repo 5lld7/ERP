@@ -31,6 +31,9 @@ const state = {
   search: "",
   reportRows: [],
   requestId: 0,
+  expandedModule: undefined,
+  sidebarModule: undefined,
+  notificationsOpen: false,
 };
 const icons = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.7"/><rect x="14" y="3" width="7" height="7" rx="1.7"/><rect x="3" y="14" width="7" height="7" rx="1.7"/><rect x="14" y="14" width="7" height="7" rx="1.7"/>',
@@ -142,7 +145,7 @@ const modules = {
     groups: [
       [
         "إدارة المخزون",
-        ["products", "branches", "warehouses", "categories", "units"],
+        ["products", "services", "branches", "warehouses", "categories", "units"],
       ],
       [
         "الحركات والتوريد",
@@ -166,7 +169,7 @@ const modules = {
     groups: [
       [
         "المبيعات والعملاء",
-        ["customers", "doc_inspection", "doc_sale", "doc_sale_return", "pos"],
+        ["appointments", "customers", "doc_inspection", "doc_sale", "doc_sale_return", "pos"],
       ],
       [
         "الأسعار والتقارير",
@@ -339,15 +342,32 @@ function allowed(module, write = false) {
   return (
     role === "admin" ||
     role === module ||
+    (role === "technician" && module === "sales") ||
     (!write && role === "viewer" && module !== "admin")
   );
+}
+function canWriteResource(name) {
+  return name === "price_lists" ? allowed("admin") : allowed(state.boot.resources[name]?.module, true);
+}
+function canConvertKind(kind) {
+  const target = { inspection: "sale", purchase_order: "purchase", sale: "sale_return", purchase: "purchase_return" }[kind];
+  return Boolean(target && state.boot.kinds[target]);
+}
+function unitLabel(unit) {
+  return window.I18n.language === "en" && unit?.name_en ? unit.name_en : unit?.name || "";
+}
+function catalogItems(kind = state.docKind) {
+  return (state.catalog?.products || []).concat(["inspection", "sale", "sale_return"].includes(kind) ? state.catalog?.services || [] : []);
+}
+function quotePricingLocked() {
+  return state.docKind === "inspection" && state.boot.user.role !== "admin";
 }
 function canPage(page) {
   if (modules[page]) return allowed(page);
   if (page.startsWith("doc_")) return Boolean(state.boot.kinds[page.slice(4)]);
   if (page.startsWith("report_"))
     return Boolean(state.boot.reports[page.slice(7)]);
-  if (page === "pos") return allowed("sales");
+  if (page === "pos") return allowed("sales") && Boolean(state.boot.kinds.sale);
   if (["users", "audit", "settings"].includes(page)) return allowed("admin");
   if (["payments", "journal"].includes(page)) return allowed("accounting");
   if (["loans", "payroll"].includes(page)) return allowed("hr");
@@ -376,6 +396,7 @@ async function api(path, opts = {}) {
   if (!response.ok) {
     if (response.status === 401 && state.boot) {
       state.boot = null;
+      window.ServiqNotifications?.stop();
       renderAuth(false);
     }
     const error = new Error(data.error || t("تعذّر تنفيذ الطلب"));
@@ -430,6 +451,7 @@ function modal(title, content, wide = false) {
   document.body.classList.add("has-modal");
 }
 function closeModal() {
+  state.notificationsOpen = false;
   if ($("#modal-root").innerHTML) {
     setHTML($("#modal-root"), "");
     document.body.classList.remove("has-modal");
@@ -447,7 +469,7 @@ function inputField(f, value) {
       f.type === "ref"
         ? (state.boot.refs[f.ref] || []).map((o) => ({
             value: o.id,
-            label: f.ref === "accounts" ? accountLabel(o.name, o) : o.name,
+            label: f.ref === "accounts" ? accountLabel(o.name, o) : f.ref === "units" ? unitLabel(o) : o.name,
           }))
         : f.options.map((o) => ({
             value: typeof o === "object" ? o.value : o,
@@ -486,15 +508,16 @@ function shell() {
   const page = state.page,
     module = moduleOf(page),
     u = state.boot.user;
+  if (state.sidebarModule !== module || state.expandedModule === undefined) state.expandedModule = module;
+  state.sidebarModule = module;
   setHTML($("#app"), `<div class="app-shell"><aside class="sidebar"><a href="#/dashboard" class="brand"><span class="brand-mark">${icon("chart")}</span><span>Serviq<small>نظام إدارة الأعمال</small></span></a><div class="workspace-label">مساحة العمل</div><a class="nav-item ${page === "dashboard" ? "active" : ""}" href="#/dashboard">${icon("grid")}<span>نظرة عامة</span></a><div class="nav-caption">إدارة أعمالك</div><nav>${Object.entries(
       modules,
     )
       .filter(([key]) => allowed(key))
       .map(
         ([key, m]) =>
-          `<a class="nav-item ${module === key ? "active" : ""}" href="#/${key}">${icon(m.icon)}<span>${m.name}</span>${icon("chevron", "nav-chev")}</a>${
-            module === key
-              ? `<div class="subnav">${m.groups
+          `<a class="nav-item ${module === key ? "active" : ""}" data-module="${key}" aria-expanded="${state.expandedModule === key}" aria-controls="sidebar-${key}" href="#/${key}">${icon(m.icon)}<span>${m.name}</span>${icon("chevron", "nav-chev")}</a>${
+            `<div class="subnav" id="sidebar-${key}" ${state.expandedModule === key ? "" : 'hidden style="display:none"'}>${m.groups
                   .flatMap((g) => g[1])
                   .filter(canPage)
                   .map(
@@ -502,12 +525,12 @@ function shell() {
                       `<a href="#/${p}" class="${page === p ? "selected" : ""}">${esc(t(title(p)))}</a>`,
                   )
                   .join("")}</div>`
-              : ""
           }`,
       )
       .join(
         "",
-      )}<a class="nav-item ${page === "reports" ? "active" : ""}" href="#/reports">${icon("file")}<span>التقارير والتحليلات</span></a></nav><div class="sidebar-bottom"><div class="sync-card"><span class="sync-dot"></span><div>بيانات مترابطة<small>كل الأقسام في قاعدة بيانات واحدة</small></div>${icon("shield")}</div>${u.role === "admin" ? `<a class="nav-item ${page === "settings" ? "active" : ""}" href="#/settings">${icon("settings")}<span>إعدادات النظام</span></a>` : ""}<button class="user-card" data-action="profile"><span class="avatar">${esc(u.name.slice(0, 1))}</span><span>${esc(u.name)}<small>${esc(t(state.boot.roles[u.role]))}</small></span>${icon("chevron")}</button></div></aside><div class="mobile-shade" data-action="menu"></div><div class="main-wrap"><header class="topbar">${button(icon("menu"), "menu", "icon-button menu-toggle", 'aria-label="فتح القائمة"')}<div class="breadcrumbs">مساحة العمل ${icon("chevron")} <strong>${esc(t(title(page)))}</strong></div><div class="topbar-tools"><div class="search-wrap">${icon("search")}<input type="search" id="global-search" placeholder="ابحث في الصفحة الحالية…" aria-label="ابحث في الصفحة الحالية" value="${esc(state.search)}"><kbd>/</kbd></div><div class="notification-tools">${languageButton()}<button class="icon-button notification" data-action="notifications" aria-label="التنبيهات">${icon("bell")}<i></i></button></div><span class="topbar-divider"></span><span class="company-label">${icon("building")}${esc(state.boot.settings.company_name)}</span></div></header><main id="main" class="main-content"><div class="loading">جارٍ تحميل البيانات…</div></main><footer class="page-footer"><span>Serviq <b>ERP</b> <i>•</i> كل تفاصيل أعمالك، مترابطة.</span><span><i class="live-dot"></i> متصل بقاعدة البيانات</span></footer></div></div>`);
+      )}<a class="nav-item ${page === "reports" ? "active" : ""}" href="#/reports">${icon("file")}<span>التقارير والتحليلات</span></a></nav><div class="sidebar-bottom"><div class="sync-card"><span class="sync-dot"></span><div>بيانات مترابطة<small>كل الأقسام في قاعدة بيانات واحدة</small></div>${icon("shield")}</div>${u.role === "admin" ? `<a class="nav-item ${page === "settings" ? "active" : ""}" href="#/settings">${icon("settings")}<span>إعدادات النظام</span></a>` : ""}<button class="user-card" data-action="profile"><span class="avatar">${esc(u.name.slice(0, 1))}</span><span>${esc(u.name)}<small>${esc(t(state.boot.roles[u.role]))}</small></span>${icon("chevron")}</button></div></aside><div class="mobile-shade" data-action="menu"></div><div class="main-wrap"><header class="topbar">${button(icon("menu"), "menu", "icon-button menu-toggle", 'aria-label="فتح القائمة"')}<div class="breadcrumbs">مساحة العمل ${icon("chevron")} <strong>${esc(t(title(page)))}</strong></div><div class="topbar-tools"><div class="search-wrap">${icon("search")}<input type="search" id="global-search" placeholder="ابحث في الصفحة الحالية…" aria-label="ابحث في الصفحة الحالية" value="${esc(state.search)}"><kbd>/</kbd></div><div class="notification-tools">${languageButton()}<button class="icon-button notification" data-action="notifications" aria-label="التنبيهات">${icon("bell")}<span id="notification-count" class="notification-count" aria-live="polite">0</span></button></div><span class="topbar-divider"></span><span class="company-label">${icon("building")}${esc(state.boot.settings.company_name)}</span></div></header><main id="main" class="main-content"><div class="loading">جارٍ تحميل البيانات…</div></main><footer class="page-footer"><span>Serviq <b>ERP</b> <i>•</i> كل تفاصيل أعمالك، مترابطة.</span><span><i class="live-dot"></i> متصل بقاعدة البيانات</span></footer></div></div>`);
+  startNotifications();
 }
 function pageHeader(titleText, subtitle, actions = "", titleIsHTML = false) {
   return `<div class="page-heading"><div><div class="eyebrow">${esc(state.boot.settings.company_name)} <span>/</span> مساحة العمل</div><h1>${titleIsHTML ? titleText : esc(t(titleText))}</h1><p>${esc(t(subtitle))}</p></div><div class="heading-actions">${actions}</div></div>`;
@@ -590,7 +613,7 @@ async function dashboardPage() {
     .map((p, i) => `${i ? "L" : "M"} ${p[0]} ${p[1]}`)
     .join(" ");
   const chart = `<svg class="sales-chart" viewBox="0 0 570 185" role="img" aria-label="مبيعات آخر ستة أشهر"><defs><linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0F766E" stop-opacity=".24"/><stop offset="100%" stop-color="#0F766E" stop-opacity="0"/></linearGradient></defs>${[36, 74, 112, 150].map((y) => `<path d="M25 ${y}H555" stroke="#e5eaf0" stroke-dasharray="4 5"/>`).join("")}<path d="${path} L522 153 L42 153Z" fill="url(#chart-fill)"/><path d="${path}" fill="none" stroke="#0F766E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${coords.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="#fff" stroke="#0F766E" stroke-width="2"><title>${esc(d.chart[i].month)}: ${numeric(d.chart[i].value)}</title></circle><text x="${p[0]}" y="178" text-anchor="middle" fill="#6c7e93" font-size="10">${new Intl.DateTimeFormat(window.I18n.locale, { month: "short" }).format(new Date(d.chart[i].month + "-15"))}</text>`).join("")}</svg>`;
-  return `${pageHeader(`${esc(t("أهلًا،"))} ${esc(state.boot.user.name.split(" ")[0])} 👋`, "إليك نظرة شاملة على أعمالك اليوم.", `<span class="date-chip">${icon("calendar")}${esc(date)}</span>${allowed("sales", true) ? button(`${icon("plus")} فاتورة جديدة`, "new-doc", "primary", 'data-kind="sale"') : ""}`, true)}
+  return `${pageHeader(`${esc(t("أهلًا،"))} ${esc(state.boot.user.name.split(" ")[0])} 👋`, "إليك نظرة شاملة على أعمالك اليوم.", `<span class="date-chip">${icon("calendar")}${esc(date)}</span>${allowed("sales", true) && state.boot.kinds.sale ? button(`${icon("plus")} فاتورة جديدة`, "new-doc", "primary", 'data-kind="sale"') : ""}`, true)}
  <section class="welcome-banner"><div><span class="pill light"><i class="live-dot"></i> أعمالك على المسار الصحيح</span><h2>صورة أوضح.<br>قرارات <em>أذكى.</em></h2><p>كل أقسام شركتك تعمل معًا. تابع الأداء،<br>واكتشف ما يحتاج انتباهك، من مكان واحد.</p><a class="hero-link" href="#/reports">استكشف تقارير أعمالك ${icon("arrow")}</a></div><div class="hero-art" aria-hidden="true"><div class="hero-rings"></div><div class="float-card inventory-float">${icon("box")}<span>المخزون<small>تحديث مع كل حركة</small></span><i class="mini-dot"></i></div><div class="hero-core">${icon("grid")}<span>Serviq</span><small>كل شيء متصل</small></div><div class="float-card finance-float">${icon("wallet")}<span>الحسابات<small>قيود مترابطة</small></span>${icon("check")}</div><div class="float-mini">${icon("users")}</div><div class="hero-cross cross-one">+</div><div class="hero-cross cross-two">+</div></div><span class="banner-tag">YOUR BUSINESS, CONNECTED</span></section>
  <section class="stats-grid">${stats.map(([label, key, ic, color, desc]) => `<article class="stat-card"><div class="stat-top"><span>${label}</span><span class="icon-tile ${color}">${icon(ic)}</span></div><div class="stat-number">${key === "employees" ? numeric(d[key]) : money(d[key])}</div><div class="stat-meta"><span class="tiny-dot ${color}"></span>${esc(t(desc))}</div></article>`).join("")}</section>
  <div class="section-label"><h2>أقسام أعمالك</h2><span>كل التفاصيل، في متناولك</span></div><section class="module-grid">${Object.entries(
@@ -660,9 +683,9 @@ function display(value, key, spec, row = null) {
   const f = spec?.fields.find((f) => f.key === key);
   if (f?.type === "ref") {
     const ref = state.boot.refs[f.ref]?.find((r) => r.id === Number(value));
-    return esc(ref ? f.ref === "accounts" ? accountLabel(ref.name, ref) : ref.name : value);
+    return esc(ref ? f.ref === "accounts" ? accountLabel(ref.name, ref) : f.ref === "units" ? unitLabel(ref) : ref.name : value);
   }
-  if (key === "name") return esc(accountLabel(value, row));
+  if (key === "name") return esc(spec === state.boot.resources.units ? unitLabel(row) : accountLabel(value, row));
   if (key === "reason" && state.page === "report_moves")
     return esc(t(state.boot.kinds[value]?.[0] || value));
   if (key === "description" && state.page === "report_statement" && row === state.reportRows[0] && value === "الرصيد الافتتاحي")
@@ -690,7 +713,7 @@ function display(value, key, spec, row = null) {
   if (["progress", "type"].includes(key)) return esc(t(erpKind(value)));
   if (key === "entity") return esc(t(title(value)));
   if (key === "action") return esc(t(value));
-  if (/^(?:\d{4}-\d{2}-\d{2})$/.test(String(value)) && (key === "date" || key.endsWith("_date")))
+  if (/^(?:\d{4}-\d{2}-\d{2})$/.test(String(value)) && (f?.type === "date" || key === "date" || key.endsWith("_date")))
     return esc(dateLabel(value));
   if (typeof value === "number")
     return `<span class="num">${numeric(value)}</span>`;
@@ -715,7 +738,7 @@ function table(rows, columns, actions = null, spec = null) {
             .map((v) => String(v ?? ""))
             .join(" ")
             .toLowerCase(),
-        )}">${columns.map((k, j) => `<td class="${j === 0 ? "first-col" : ""}">${j === 0 && k === "name" ? `<span class="table-name"><span class="table-avatar">${esc(String(accountLabel(r[k], r)).slice(0, 1))}</span>${display(r[k], k, spec, r)}</span>` : display(r[k], k, spec, r)}</td>`).join("")}${actions ? `<td><div class="row-actions">${actions(r, i)}</div></td>` : ""}</tr>`,
+        )}">${columns.map((k, j) => `<td class="${j === 0 ? "first-col" : ""}">${j === 0 && k === "name" ? `<span class="table-name"><span class="table-avatar">${esc(String(spec === state.boot.resources.units ? unitLabel(r) : accountLabel(r[k], r)).slice(0, 1))}</span>${display(r[k], k, spec, r)}</span>` : display(r[k], k, spec, r)}</td>`).join("")}${actions ? `<td><div class="row-actions">${actions(r, i)}</div></td>` : ""}</tr>`,
     )
     .join(
       "",
@@ -727,23 +750,23 @@ function tableTools(count, placeholder = "بحث في السجلات…", extra 
 async function resourcePage(name) {
   const spec = state.boot.resources[name];
   state.rows = await api(`resources/${name}`);
-  const columns = spec.fields
+  const columns = spec.fields.filter((f) => f.key !== "service_method")
     .slice(0, Math.min(name === "employees" ? 6 : 7, spec.fields.length))
     .map((f) => f.key);
-  return `${pageHeader(spec.label, "أضف بياناتك وحدّثها، وستتاح تلقائيًا في العمليات المرتبطة.", allowed(spec.module, true) ? button(`${icon("plus")} إضافة ${name === "products" ? "صنف" : name === "employees" ? "موظف" : "سجل"}`, "new-resource", "primary", `data-resource="${name}"`) : "")}<section class="panel">${tableTools(state.rows.length)}${state.rows.length ? table(state.rows, columns, (r) => `${button(icon("eye"), "view-resource", "icon-button", `data-id="${r.id}" data-resource="${name}" aria-label="عرض التفاصيل"`)}${allowed(spec.module, true) ? button(icon("edit"), "edit-resource", "icon-button", `data-id="${r.id}" data-resource="${name}" aria-label="تعديل"`) + button(icon("trash"), "delete-resource", "icon-button danger-text", `data-id="${r.id}" data-resource="${name}" aria-label="حذف"`) : ""}${name === "employees" ? button(icon("file"), "employee-files", "icon-button", `data-id="${r.id}" aria-label="الملفات والعقود"`) : ""}${name === "products" ? button(icon("barcode"), "barcode", "icon-button", `data-id="${r.id}" aria-label="طباعة باركود"`) : ""}`, spec) : empty()}</section>${name === "assets" ? `<div class="inline-note">${icon("info")} تسجيل الأصل لا يسدد تكلفة شرائه تلقائيًا. سجّل قيد اقتناء الأصل في القيود اليومية، ثم احتسب الإهلاك شهريًا.${allowed("accounting", true) ? button("احتساب الإهلاك", "depreciate", "secondary") : ""}</div>` : ""}`;
+  return `${pageHeader(spec.label, "أضف بياناتك وحدّثها، وستتاح تلقائيًا في العمليات المرتبطة.", canWriteResource(name) ? button(`${icon("plus")} إضافة ${name === "products" ? "صنف" : name === "services" ? "خدمة" : name === "employees" ? "موظف" : "سجل"}`, "new-resource", "primary", `data-resource="${name}"`) : "")}<section class="panel">${tableTools(state.rows.length)}${state.rows.length ? table(state.rows, columns, (r) => `${button(icon("eye"), "view-resource", "icon-button", `data-id="${r.id}" data-resource="${name}" aria-label="عرض التفاصيل"`)}${canWriteResource(name) ? button(icon("edit"), "edit-resource", "icon-button", `data-id="${r.id}" data-resource="${name}" aria-label="تعديل"`) + button(icon("trash"), "delete-resource", "icon-button danger-text", `data-id="${r.id}" data-resource="${name}" aria-label="حذف"`) : ""}${name === "employees" ? button(icon("file"), "employee-files", "icon-button", `data-id="${r.id}" aria-label="الملفات والعقود"`) : ""}${name === "products" ? button(icon("barcode"), "barcode", "icon-button", `data-id="${r.id}" aria-label="طباعة باركود"`) : ""}`, spec) : empty()}</section>${name === "assets" ? `<div class="inline-note">${icon("info")} تسجيل الأصل لا يسدد تكلفة شرائه تلقائيًا. سجّل قيد اقتناء الأصل في القيود اليومية، ثم احتسب الإهلاك شهريًا.${allowed("accounting", true) ? button("احتساب الإهلاك", "depreciate", "secondary") : ""}</div>` : ""}`;
 }
 function resourceModal(name, id = null) {
   const spec = state.boot.resources[name],
     row = id ? state.rows.find((r) => r.id === id) : {};
   modal(
     `${id ? "تعديل" : "إضافة"} — ${spec.label}`,
-    `<form id="resource-form" data-resource="${name}" data-id="${id || ""}"><div class="modal-body"><div class="form-grid">${spec.fields.map((f) => inputField(f, row?.[f.key] ?? (f.type === "date" && f.required ? dateNow() : f.key === "status" ? f.options?.[0] : f.key === "classification" ? "عادي" : f.key === "leave_balance" ? state.boot.settings.leave_days : ["money", "number"].includes(f.type) ? 0 : ""))).join("")}</div><div class="form-error" role="alert"></div></div>${modalFooter()}</form>`,
+    `<form id="resource-form" data-resource="${name}" data-id="${id || ""}"><div class="modal-body"><div class="form-grid">${spec.fields.map((f) => inputField(f, row?.[f.key] ?? (f.type === "date" && f.required ? dateNow() : f.key === "status" ? f.options?.[0] : f.key === "classification" ? "عادي" : f.key === "leave_balance" ? state.boot.settings.leave_days : ["money", "number"].includes(f.type) ? 0 : ""))).join("")}</div>${name === "employees" ? employeeUploadField(false) : ""}<div class="form-error" role="alert"></div></div>${modalFooter()}</form>`,
   );
 }
 async function documentsPage(kind) {
   state.rows = await api(`documents?kind=${kind}`);
   const m = state.boot.kinds[kind][1];
-  return `${pageHeader(state.boot.kinds[kind][0], "المستند المرحّل يحدّث المخزون والحسابات تلقائيًا ولا يمكن حذفه.", allowed(m, true) ? button(`${icon("plus")} مستند جديد`, "new-doc", "primary", `data-kind="${kind}"`) : "")}<section class="panel">${tableTools(state.rows.length, "ابحث برقم المستند أو الطرف…", '<select id="status-filter" aria-label="فلتر الحالة"><option value="">كل الحالات</option><option value="posted">مرحّل</option><option value="draft">مسودة</option></select>')}${state.rows.length ? table(state.rows, kind === "inspection" ? ["number", "date", "party", "progress", "appointment_date", "status", "total"] : ["number", "date", "party", "warehouse", "status", "total", "paid"], (r) => `${button(icon("eye"), "view-doc", "icon-button", `data-id="${r.id}" aria-label="عرض المستند"`)}${kind === "inspection" ? inspectionActions(r.id, true) : ""}${kind === "inspection" && allowed(m, true) ? button(icon("clock"), "inspection-progress", "icon-button", `data-id="${r.id}" aria-label="متابعة حالة المعاينة"`) : ""}${r.status === "draft" && allowed(m, true) ? button(icon("check"), "post-doc", "icon-button", `data-id="${r.id}" aria-label="ترحيل"`) + button(icon("trash"), "delete-doc", "icon-button danger-text", `data-id="${r.id}" aria-label="حذف المسودة"`) : ""}${["inspection", "purchase_order", "sale", "purchase"].includes(kind) && r.status === "posted" && allowed(m, true) ? button(icon("arrow"), "convert-doc", "icon-button", `data-id="${r.id}" aria-label="${["sale", "purchase"].includes(kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة"}"`) : ""}`) : empty()}</section>`;
+  return `${pageHeader(state.boot.kinds[kind][0], "المستند المرحّل يحدّث المخزون والحسابات تلقائيًا ولا يمكن حذفه.", allowed(m, true) ? button(`${icon("plus")} مستند جديد`, "new-doc", "primary", `data-kind="${kind}"`) : "")}<section class="panel">${tableTools(state.rows.length, "ابحث برقم المستند أو الطرف…", '<select id="status-filter" aria-label="فلتر الحالة"><option value="">كل الحالات</option><option value="posted">مرحّل</option><option value="draft">مسودة</option></select>')}${state.rows.length ? table(state.rows, kind === "inspection" ? ["number", "date", "party", "progress", "appointment_date", "status", "total"] : ["number", "date", "party", "warehouse", "status", "total", "paid"], (r) => `${button(icon("eye"), "view-doc", "icon-button", `data-id="${r.id}" aria-label="عرض المستند"`)}${kind === "inspection" ? inspectionActions(r.id, true) : ""}${kind === "inspection" && allowed(m, true) ? button(icon("clock"), "inspection-progress", "icon-button", `data-id="${r.id}" aria-label="متابعة حالة المعاينة"`) : ""}${r.status === "draft" && allowed(m, true) ? button(icon("check"), "post-doc", "icon-button", `data-id="${r.id}" aria-label="ترحيل"`) + button(icon("trash"), "delete-doc", "icon-button danger-text", `data-id="${r.id}" aria-label="حذف المسودة"`) : ""}${["inspection", "purchase_order", "sale", "purchase"].includes(kind) && r.status === "posted" && allowed(m, true) && canConvertKind(kind) ? button(icon("arrow"), "convert-doc", "icon-button", `data-id="${r.id}" aria-label="${["sale", "purchase"].includes(kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة"}"`) : ""}`) : empty()}</section>`;
 }
 async function documentModal(kind, source = null) {
   state.catalog = await api("catalog");
@@ -775,7 +798,7 @@ async function documentModal(kind, source = null) {
     ).filter((d) => d.status === "posted");
   modal(
     state.boot.kinds[kind][0],
-    `<form id="document-form"><div class="modal-body"><div class="inline-note compact">${icon("info")}${kind === "adjustment" ? "أدخل الكمية الفعلية بعد الجرد؛ الفرق يُرحّل على المخزون والحسابات." : kind === "receipt" ? "استلام بدون فاتورة: يثبت المخزون مقابل الأرصدة الافتتاحية. للمشتريات استخدم فاتورة مشتريات، أو حوّل أمر الشراء." : "راجع الأصناف والأسعار قبل الترحيل. المسودة لا تغيّر أرصدة المخزون أو الحسابات."}</div>${source ? `<div class="source-chip">${icon("file")} مستند مصدر: ${esc(source.number)}</div>` : ""}<div class="form-grid three">${originals.length ? inputField({ key: "original_document", label: "الفاتورة الأصلية", type: "select", translateOptions: false, required: true, options: originals.map((d) => ({ value: d.id, label: `${d.number} — ${d.party}` })) }) : ""}${inputField({ key: "date", label: "تاريخ المستند", type: "date", required: true }, dateNow())}${inputField({ key: "warehouse_id", label: "المخزن", type: "ref", required: true, ref: "warehouses" }, source?.warehouse_id || state.boot.refs.warehouses[0]?.id)}${customer ? inputField({ key: "customer_id", label: "العميل", type: "ref", required: true, ref: "customers" }, source?.customer_id) : ""}${supplier ? inputField({ key: "supplier_id", label: "المورد", type: "ref", required: true, ref: "suppliers" }, source?.supplier_id) : ""}${kind === "inspection" ? inputField({ key: "appointment_date", label: "موعد المعاينة", type: "date" }, source?.appointment_date) + inputField({ key: "location", label: "عنوان المعاينة" }, source?.location) : ""}${kind === "transfer" ? inputField({ key: "target_warehouse_id", label: "المخزن المستلم", type: "ref", required: true, ref: "warehouses" }) : ""}${fiscal ? inputField({ key: "due_date", label: "تاريخ الاستحقاق", type: "date" }, dateNow()) : ""}</div><div class="line-add"><select id="line-product" aria-label="اختر صنفًا"><option value="">اختر صنفًا لإضافته…</option>${state.catalog.products.map((p) => `<option value="${p.id}">${esc(p.sku)} — ${esc(p.name)}</option>`).join("")}</select><input type="text" id="barcode-input" placeholder="امسح الباركود ثم Enter" aria-label="قارئ الباركود" autocomplete="off">${button(`${icon("plus")} إضافة`, "add-line", "secondary")}</div><div id="document-lines"></div><div class="document-bottom"><div class="form-grid">${fiscal ? inputField({ key: "discount", label: "خصم على الفاتورة", type: "money" }, source?.discount || 0) + inputField({ key: "tax_rate", label: "ضريبة القيمة المضافة %", type: "number" }, source?.tax_rate ?? state.boot.settings.tax_rate) : ""}${
+    `<form id="document-form"><div class="modal-body"><div class="inline-note compact">${icon("info")}${kind === "adjustment" ? "أدخل الكمية الفعلية بعد الجرد؛ الفرق يُرحّل على المخزون والحسابات." : kind === "receipt" ? "استلام أصناف بدون فاتورة. للمشتريات استخدم فاتورة مشتريات، أو حوّل أمر الشراء." : "راجع الأصناف والأسعار قبل الترحيل. المسودة لا تغيّر أرصدة المخزون أو الحسابات."}</div>${source ? `<div class="source-chip">${icon("file")} مستند مصدر: ${esc(source.number)}</div>` : ""}<div class="form-grid three">${originals.length ? inputField({ key: "original_document", label: "الفاتورة الأصلية", type: "select", translateOptions: false, required: true, options: originals.map((d) => ({ value: d.id, label: `${d.number} — ${d.party}` })) }) : ""}${inputField({ key: "date", label: "تاريخ المستند", type: "date", required: true }, dateNow())}${inputField({ key: "warehouse_id", label: "المخزن", type: "ref", required: true, ref: "warehouses" }, source?.warehouse_id || state.boot.refs.warehouses[0]?.id)}${customer ? inputField({ key: "customer_id", label: "العميل", type: "ref", required: true, ref: "customers" }, source?.customer_id) : ""}${supplier ? inputField({ key: "supplier_id", label: "المورد", type: "ref", required: true, ref: "suppliers" }, source?.supplier_id) : ""}${kind === "inspection" ? inputField({ key: "appointment_date", label: "موعد المعاينة", type: "date" }, source?.appointment_date) + inputField({ key: "location", label: "عنوان المعاينة" }, source?.location) : ""}${kind === "transfer" ? inputField({ key: "target_warehouse_id", label: "المخزن المستلم", type: "ref", required: true, ref: "warehouses" }) : ""}${fiscal ? inputField({ key: "due_date", label: "تاريخ الاستحقاق", type: "date" }, dateNow()) : ""}</div><div class="line-add"><select id="line-product" aria-label="اختر صنفًا"><option value="">اختر صنفًا لإضافته…</option>${catalogItems(kind).map((p) => `<option value="${p.id}">${esc(p.sku)} — ${esc(p.name)}</option>`).join("")}</select><input type="text" id="barcode-input" placeholder="امسح الباركود ثم Enter" aria-label="قارئ الباركود" autocomplete="off">${button(`${icon("plus")} إضافة`, "add-line", "secondary")}</div><div id="document-lines"></div><div class="document-bottom"><div class="form-grid">${fiscal ? inputField({ key: "discount", label: "خصم على الفاتورة", type: "money" }, source?.discount || 0) + inputField({ key: "tax_rate", label: "ضريبة القيمة المضافة %", type: "number" }, source?.tax_rate ?? state.boot.settings.tax_rate) : ""}${
       ["sale", "sale_return", "purchase", "purchase_return"].includes(kind)
         ? inputField(
             { key: "paid", label: "المبلغ المدفوع الآن", type: "money" },
@@ -798,6 +821,12 @@ async function documentModal(kind, source = null) {
     }${inputField({ key: "note", label: "ملاحظات المستند", type: "textarea" }, source?.note || "")}</div><div class="invoice-summary" id="doc-summary"></div></div><div class="form-error" role="alert"></div></div><footer class="modal-footer"><button class="btn primary" type="submit" name="mode" value="post">${icon("check")} حفظ وترحيل</button><button class="btn secondary" type="submit" name="mode" value="draft">حفظ كمسودة</button>${button("إلغاء", "close", "ghost")}</footer></form>`,
     true,
   );
+  if (quotePricingLocked()) {
+    $("[name=discount]").value = 0;
+    $("[name=discount]").readOnly = true;
+    $("[name=tax_rate]").value = state.boot.settings.tax_rate;
+    $("[name=tax_rate]").readOnly = true;
+  }
   renderDocLines();
 }
 function renderDocLines() {
@@ -806,13 +835,13 @@ function renderDocLines() {
   setHTML(container, state.documentLines.length
     ? `<div class="table-scroll"><table class="line-table"><thead><tr><th>الصنف</th><th>المتاح</th><th>الكمية ${state.docKind === "adjustment" ? "الفعلية" : ""}</th><th>السعر</th><th>الإجمالي</th><th></th></tr></thead><tbody>${state.documentLines
         .map((l, i) => {
-          const p = state.catalog.products.find((p) => p.id === l.product_id),
+          const p = catalogItems().find((p) => p.id === l.product_id),
             wid = Number($("[name=warehouse_id]")?.value);
           const stock =
             state.catalog.stocks.find(
               (s) => s.product_id === l.product_id && s.warehouse_id === wid,
             )?.quantity || 0;
-          return `<tr><td><strong>${esc(p?.name)}</strong><small class="block muted">${esc(p?.sku)}</small></td><td>${numeric(stock)}</td><td><input class="line-input" data-line="${i}" data-field="quantity" type="number" step="0.001" min="${state.docKind === "adjustment" ? 0 : 0.001}" value="${l.quantity}" required aria-label="كمية ${esc(p?.name)}"></td><td><input class="line-input" data-line="${i}" data-field="price" type="number" step="0.01" min="0" value="${l.price}" required aria-label="سعر ${esc(p?.name)}"></td><td class="num line-total" data-index="${i}">${money(l.quantity * l.price)}</td><td>${button(icon("close"), "remove-line", "icon-button danger-text", `data-index="${i}" aria-label="حذف الصنف"`)}</td></tr>`;
+          return `<tr><td><strong>${esc(p?.name)}</strong><small class="block muted">${esc(p?.sku)}</small></td><td>${p?.item_type === "service" ? esc(t("خدمة بدون مخزون")) : numeric(stock)}</td><td><input class="line-input" data-line="${i}" data-field="quantity" type="number" step="0.001" min="${state.docKind === "adjustment" ? 0 : 0.001}" value="${l.quantity}" required aria-label="كمية ${esc(p?.name)}"></td><td><input class="line-input" data-line="${i}" data-field="price" type="number" step="0.01" min="0" value="${l.price}" ${quotePricingLocked() ? "readonly" : ""} required aria-label="سعر ${esc(p?.name)}"></td><td class="num line-total" data-index="${i}">${money(l.quantity * l.price)}</td><td>${button(icon("close"), "remove-line", "icon-button danger-text", `data-index="${i}" aria-label="حذف الصنف"`)}</td></tr>`;
         })
         .join("")}</tbody></table></div>`
     : empty("أضف أصناف المستند", "اختر صنفًا أو امسح باركود المنتج."));
@@ -849,7 +878,7 @@ function updateDocSummary() {
 }
 function addLine(pid) {
   if (!pid) return;
-  const p = state.catalog.products.find((p) => p.id === Number(pid));
+  const p = catalogItems().find((p) => p.id === Number(pid));
   if (!p) return toast("الصنف غير موجود", true);
   const exists = state.documentLines.find((l) => l.product_id === p.id);
   if (exists) exists.quantity += 1;
@@ -866,12 +895,12 @@ function addLine(pid) {
         (o) =>
           o.product_id === p.id &&
           (!o.customer_id || o.customer_id === cid) &&
-          o.start_date <= dateNow() &&
-          o.end_date >= dateNow(),
+          o.start_date <= ($("[name=date]")?.value || dateNow()) &&
+          o.end_date >= ($("[name=date]")?.value || dateNow()),
       )
       .sort(
         (a, b) =>
-          Number(Boolean(b.customer_id)) - Number(Boolean(a.customer_id)),
+          Number(Boolean(b.customer_id)) - Number(Boolean(a.customer_id)) || b.id - a.id,
       );
     state.documentLines.push({
       product_id: p.id,
@@ -923,7 +952,7 @@ async function viewDocument(id) {
   const m = state.boot.kinds[d.kind][1];
   modal(
     d.number,
-    `<div class="modal-body printable" id="print-content"><div class="invoice-header"><div><h2>${esc(state.boot.settings.company_name)}</h2><p>${esc(state.boot.settings.company_address)}</p><p>الرقم الضريبي: ${esc(state.boot.settings.tax_number || "—")}</p></div><div><span class="eyebrow">${esc(t(d.kind === "inspection" ? "عرض سعر معاينة" : state.boot.kinds[d.kind][0]))}</span><h2 class="num">${esc(d.number)}</h2>${badge(d.status)}</div></div><div class="detail-grid"><div><small>التاريخ</small><b>${esc(dateLabel(d.date))}</b></div><div><small>${d.kind === "inspection" ? "العميل" : "العميل / المورد"}</small><b>${esc(d.customer || d.supplier || "—")}</b></div><div><small>المخزن</small><b>${esc(d.warehouse)}</b></div>${d.kind !== "inspection" ? `<div><small>الاستحقاق</small><b>${esc(dateLabel(d.due_date))}</b></div>` : ""}${d.kind === "inspection" ? `<div><small>مرحلة المعاينة</small><b>${esc(t(d.progress))}</b></div><div><small>موعد وموقع المعاينة</small><b>${esc(dateLabel(d.appointment_date || "—"))} — ${esc(d.location || "—")}</b></div>` : ""}${d.target_warehouse ? `<div><small>المخزن المستلم</small><b>${esc(d.target_warehouse)}</b></div>` : ""}</div>${table(d.lines, ["sku", "name", "quantity", "price", "total"])}<div class="invoice-summary detail-summary"><div><span>إجمالي الأصناف</span><b>${money(d.subtotal)}</b></div><div><span>خصم</span><b>${money(d.discount)}</b></div><div><span>الضريبة</span><b>${money(d.tax)}</b></div><div class="grand-total"><span>الإجمالي</span><b>${money(d.total)}</b></div>${d.kind !== "inspection" ? `<div><span>المدفوع / المتبقي</span><b>${money(d.paid)} / ${money(d.total - d.paid)}</b></div>` : ""}</div><p class="muted">${esc(d.note)}</p><p class="print-signatures">توقيع المستلم: __________________ &nbsp; توقيع المسؤول: __________________</p></div><footer class="modal-footer">${d.kind === "inspection" ? inspectionActions(id) : ""}${button(`${icon("print")} طباعة`, "print", d.kind === "inspection" ? "secondary" : "primary")}${d.status === "draft" && allowed(m, true) ? button("ترحيل المستند", "post-doc", "secondary", `data-id="${id}"`) : ""}${d.status === "posted" && ["inspection", "purchase_order", "sale", "purchase"].includes(d.kind) && allowed(m, true) ? button(["sale", "purchase"].includes(d.kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة", "convert-doc", "secondary", `data-id="${id}"`) : ""}${["sale", "purchase", "sale_return", "purchase_return"].includes(d.kind) && d.status === "posted" && d.paid < d.total && allowed("accounting", true) ? button("تسجيل سداد", "pay-doc", "secondary", `data-id="${id}"`) : ""}</footer>`,
+    `<div class="modal-body printable" id="print-content"><div class="invoice-header"><div><h2>${esc(state.boot.settings.company_name)}</h2><p>${esc(state.boot.settings.company_address)}</p><p>الرقم الضريبي: ${esc(state.boot.settings.tax_number || "—")}</p></div><div><span class="eyebrow">${esc(t(d.kind === "inspection" ? "عرض سعر معاينة" : state.boot.kinds[d.kind][0]))}</span><h2 class="num">${esc(d.number)}</h2>${badge(d.status)}</div></div><div class="detail-grid"><div><small>التاريخ</small><b>${esc(dateLabel(d.date))}</b></div><div><small>${d.kind === "inspection" ? "العميل" : "العميل / المورد"}</small><b>${esc(d.customer || d.supplier || "—")}</b></div><div><small>المخزن</small><b>${esc(d.warehouse)}</b></div>${d.kind !== "inspection" ? `<div><small>الاستحقاق</small><b>${esc(dateLabel(d.due_date))}</b></div>` : ""}${d.kind === "inspection" ? `<div><small>مرحلة المعاينة</small><b>${esc(t(d.progress))}</b></div><div><small>موعد وموقع المعاينة</small><b>${esc(dateLabel(d.appointment_date || "—"))} — ${esc(d.location || "—")}</b></div>` : ""}${d.target_warehouse ? `<div><small>المخزن المستلم</small><b>${esc(d.target_warehouse)}</b></div>` : ""}</div>${table(d.lines, ["sku", "name", "quantity", "price", "total"])}<div class="invoice-summary detail-summary"><div><span>إجمالي الأصناف</span><b>${money(d.subtotal)}</b></div><div><span>خصم</span><b>${money(d.discount)}</b></div><div><span>الضريبة</span><b>${money(d.tax)}</b></div><div class="grand-total"><span>الإجمالي</span><b>${money(d.total)}</b></div>${d.kind !== "inspection" ? `<div><span>المدفوع / المتبقي</span><b>${money(d.paid)} / ${money(d.total - d.paid)}</b></div>` : ""}</div><p class="muted">${esc(d.note)}</p><p class="print-signatures">توقيع المستلم: __________________ &nbsp; توقيع المسؤول: __________________</p></div><footer class="modal-footer">${d.kind === "inspection" ? inspectionActions(id) : ""}${button(`${icon("print")} طباعة`, "print", d.kind === "inspection" ? "secondary" : "primary")}${d.status === "draft" && allowed(m, true) ? button("ترحيل المستند", "post-doc", "secondary", `data-id="${id}"`) : ""}${d.status === "posted" && ["inspection", "purchase_order", "sale", "purchase"].includes(d.kind) && allowed(m, true) && canConvertKind(d.kind) ? button(["sale", "purchase"].includes(d.kind) ? "إنشاء مرتجع" : "تحويل إلى فاتورة", "convert-doc", "secondary", `data-id="${id}"`) : ""}${["sale", "purchase", "sale_return", "purchase_return"].includes(d.kind) && d.status === "posted" && d.paid < d.total && allowed("accounting", true) ? button("تسجيل سداد", "pay-doc", "secondary", `data-id="${id}"`) : ""}</footer>`,
     true,
   );
 }
@@ -1204,7 +1233,7 @@ function settingsPage() {
 }
 async function posPage() {
   state.catalog = await api("catalog");
-  return `${pageHeader("نقطة البيع", "بيع سريع بالباركود، مع تسجيل السداد وتحديث المخزون والحسابات.", button(`${icon("cart")} بدء عملية بيع`, "new-doc", "primary", 'data-kind="sale"'))}<section class="inline-note">${icon("info")} اضغط على أي صنف لبدء فاتورة، أو استخدم قارئ الباركود داخل الفاتورة. البطاقة والتحويل طرق لتسجيل سداد تم خارج النظام.</section><section class="pos-grid">${state.catalog.products.map((p) => `<button class="pos-product" data-action="pos-product" data-id="${p.id}" data-search="${esc(p.name + " " + p.sku + " " + p.barcode)}"><div class="product-illustration">${icon("box")}</div><small>${esc(p.sku)}</small><h3>${esc(p.name)}</h3><b>${money(p.price)}</b><span class="round-plus">${icon("plus")}</span></button>`).join("") || empty("أضف أصنافك أولًا", "تظهر هنا المنتجات المسجلة في المخزون.")}</section>`;
+  return `${pageHeader("نقطة البيع", "بيع سريع بالباركود، مع تسجيل السداد وتحديث المخزون والحسابات.", button(`${icon("cart")} بدء عملية بيع`, "new-doc", "primary", 'data-kind="sale"'))}<section class="inline-note">${icon("info")} اضغط على أي صنف لبدء فاتورة، أو استخدم قارئ الباركود داخل الفاتورة. البطاقة والتحويل طرق لتسجيل سداد تم خارج النظام.</section><section class="pos-grid">${catalogItems("sale").map((p) => `<button class="pos-product" data-action="pos-product" data-id="${p.id}" data-search="${esc(p.name + " " + p.sku + " " + p.barcode)}"><div class="product-illustration">${icon("box")}</div><small>${esc(p.sku)}</small><h3>${esc(p.name)}</h3><b>${money(p.price)}</b><span class="round-plus">${icon("plus")}</span></button>`).join("") || empty("أضف أصنافك أولًا", "تظهر هنا المنتجات المسجلة في المخزون.")}</section>`;
 }
 function filterTable(query) {
   const q = query.toLocaleLowerCase(window.I18n.language);
@@ -1342,16 +1371,98 @@ function barcodeSvg(text) {
   return `<svg class="barcode-svg" viewBox="0 0 ${x + 16} 104" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(text)}">${rects}<text x="${(x + 16) / 2}" y="98" text-anchor="middle" font-family="monospace" font-size="12">${esc(text)}</text></svg>`;
 }
 
+function employeeUploadField(required = false, name = "employee_upload") {
+  return `<label class="field full"><span>صور الموظف وملفاته — PDF أو PNG أو JPEG</span><input type="file" name="${name}" accept="application/pdf,image/png,image/jpeg" multiple ${required ? "required" : ""}><small>يمكن اختيار أكثر من ملف. الحد الأقصى لكل ملف 2 ميجابايت.</small></label>`;
+}
+function pendingEmployeeFiles(input) {
+  return input?._pendingEmployeeFiles ?? [...(input?.files || [])];
+}
+function localizedClientError(message) {
+  const error = new Error(message);
+  error.localized = true;
+  return error;
+}
+function validateEmployeeFiles(files) {
+  for (const file of files) {
+    if (!file.size || file.size > 2 * 1024 * 1024) throw localizedClientError(t("الحد الأقصى لكل ملف 2 ميجابايت:") + " " + file.name);
+    if (!/\.(pdf|png|jpe?g)$/i.test(file.name)) throw localizedClientError(t("الأنواع المتاحة: PDF وPNG وJPEG فقط") + " — " + file.name);
+  }
+}
+async function uploadEmployeeFiles(employeeId, input) {
+  const files = pendingEmployeeFiles(input);
+  validateEmployeeFiles(files);
+  input._pendingEmployeeFiles = [...files];
+  for (const file of files) {
+    const content = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = () => reject(new Error("تعذّر قراءة الملف"));
+      reader.readAsDataURL(file);
+    });
+    await api(`employees/${employeeId}/files`, {method: "POST", body: {name: file.name, content}});
+    input._pendingEmployeeFiles.shift();
+  }
+  input.value = "";
+}
 async function employeeFilesModal(id) {
   const files = await api(`employees/${id}/files`);
   modal(
     "ملف الموظف والعقود",
-    `<div class="modal-body"><p class="muted">صور المستندات والعقود والملفات الشخصية، محفوظة ضمن النسخة الاحتياطية.</p>${files.length ? table(files, ["name", "size", "created_at"], (r) => button(icon("download"), "download-file", "icon-button", `data-id="${r.id}" aria-label="تنزيل الملف"`) + (allowed("hr", true) ? button(icon("trash"), "delete-file", "icon-button danger-text", `data-id="${r.id}" aria-label="حذف الملف"`) : "")) : empty("لا توجد مرفقات بعد", "أضف عقد العمل أو مستند الموظف.")}${allowed("hr", true) ? `<form id="file-form" data-id="${id}"><label class="field"><span>ملف PDF أو صورة PNG / JPEG — حتى 2 ميجابايت</span><input type="file" name="upload" accept="application/pdf,image/png,image/jpeg" required></label><div class="form-error"></div><button class="btn primary" type="submit">${icon("plus")} حفظ المرفق</button></form>` : ""}</div>`,
+    `<div class="modal-body"><p class="muted">صور المستندات والعقود والملفات الشخصية، محفوظة ضمن النسخة الاحتياطية.</p><div id="employee-files-list">${files.length ? table(files, ["name", "size", "created_at"], (r) => button(`${icon("download")} تنزيل`, "download-file", "secondary", `data-id="${r.id}" aria-label="تنزيل الملف" title="${esc(r.name)}"`) + (allowed("hr", true) ? button(icon("trash"), "delete-file", "icon-button danger-text", `data-id="${r.id}" aria-label="حذف الملف"`) : "")) : empty("لا توجد مرفقات بعد", "أضف عقد العمل أو مستند الموظف.")}</div>${allowed("hr", true) ? `<form id="file-form" data-id="${id}">${employeeUploadField(true, "upload")}<div class="form-error" role="alert"></div><button class="btn primary" type="submit">${icon("plus")} حفظ الملفات</button></form>` : ""}</div>`,
   );
+}
+function startNotifications() {
+  if (!window.ServiqNotifications || !state.boot) return;
+  window.ServiqNotifications.start({
+    userId: state.boot.user.id,
+    fetchNotifications: () => api("notifications"),
+    markRead: (ids) => api("notifications/read", {method: "POST", body: ids ? {ids} : {}}),
+    onUpdate: (snapshot) => {
+      const count = Number(snapshot.unread_count || 0);
+      const badge = $("#notification-count");
+      if (badge) {
+        badge.textContent = String(count);
+        badge.classList.toggle("is-zero", count === 0);
+      }
+      const bell = $('[data-action="notifications"]');
+      if (bell) {
+        bell.setAttribute("aria-label", t("التنبيهات") + ": " + count);
+        bell.classList.toggle("has-unread", count > 0);
+      }
+      if (state.notificationsOpen && $("#notifications-content")) setHTML($("#notifications-content"), notificationsContent(snapshot));
+    },
+  });
+  const current = window.ServiqNotifications.getState();
+  const badge = $("#notification-count");
+  if (badge) badge.textContent = String(current.unread_count || 0);
+}
+function notificationsContent(snapshot) {
+  const sound = snapshot.sound_enabled ?? snapshot.soundEnabled ?? false;
+  return `<div class="notification-controls">${button("تحديد الكل كمقروء", "notification-mark-all", "secondary", !snapshot.unread_count ? "disabled" : "")}${button(sound ? "إيقاف صوت الإشعارات" : "تفعيل صوت الإشعارات", "notification-sound", "secondary", `aria-pressed="${sound}"`)}</div><div class="notification-list">${snapshot.items?.length ? snapshot.items.map((item) => `<button type="button" class="notification-item ${item.is_read ? "is-read" : "is-unread"}" data-action="notification-read" data-id="${Number(item.id)}"><span>${icon("bell")}</span><span><strong>${esc(t(item.title))}</strong><small>${esc(item.detail)}</small></span>${item.is_read ? "" : '<span class="unread-dot" aria-label="غير مقروء"></span>'}</button>`).join("") : empty("كل شيء هادئ", "لا توجد تنبيهات حاليًا.")}</div>`;
+}
+function notificationsModal() {
+  state.notificationsOpen = true;
+  const snapshot = window.ServiqNotifications?.getState() || {items: [], unread_count: 0};
+  modal("تنبيهات مساحة العمل", `<div class="modal-body" id="notifications-content">${notificationsContent(snapshot)}</div>`);
 }
 
 document.addEventListener("click", async (event) => {
   const link = event.target.closest('a[href^="#/"]');
+  if (link?.dataset.module) {
+    event.preventDefault();
+    const key = link.dataset.module;
+    state.expandedModule = state.expandedModule === key ? null : key;
+    $$("[data-module]").forEach((item) => item.setAttribute("aria-expanded", String(item.dataset.module === state.expandedModule)));
+    Object.keys(modules).forEach((name) => {
+      const subnav = $("#sidebar-" + name);
+      if (subnav) { subnav.hidden = state.expandedModule !== name; subnav.style.display = subnav.hidden ? "none" : ""; }
+    });
+    if (state.expandedModule && moduleOf(state.page) !== key) {
+      document.body.classList.remove("menu-open");
+      nav(key);
+    }
+    return;
+  }
   if (link) document.body.classList.remove("menu-open");
   const el = event.target.closest("[data-action]");
   if (!el) return;
@@ -1502,14 +1613,21 @@ document.addEventListener("click", async (event) => {
       await api("logout", { method: "POST", body: {} });
       closeModal();
       state.boot = null;
+      window.ServiqNotifications?.stop();
       return renderAuth(false);
     }
     if (action === "notifications") {
-      const d = await api("dashboard");
-      return modal(
-        "تنبيهات مساحة العمل",
-        `<div class="modal-body"><div class="notification-list">${d.low_stock?.map((p) => `<a href="#/report_stock" data-action="close">${icon("box")}<span>رصيد ${esc(p.name)}: <b>${numeric(p.quantity)}</b> / حد الطلب ${numeric(p.min_stock)}</span></a>`).join("") || ""}${d.expiring?.map((p) => `<a href="#/products" data-action="close">${icon("clock")}<span>${esc(p.name)} — الصلاحية ${esc(p.expiry_date)}</span></a>`).join("") || ""}${d.pending_leaves ? `<a href="#/leaves" data-action="close">${icon("users")} ${d.pending_leaves} طلبات إجازة للمراجعة</a>` : ""}${!d.low_stock?.length && !d.expiring?.length && !d.pending_leaves ? empty("كل شيء هادئ", "لا توجد تنبيهات حاليًا.") : ""}</div></div>`,
-      );
+      state.notificationsOpen = true;
+      if (window.ServiqNotifications) await window.ServiqNotifications.refresh();
+      return notificationsModal();
+    }
+    if (action === "notification-mark-all") return await window.ServiqNotifications?.markAllRead();
+    if (action === "notification-sound") { await window.ServiqNotifications?.toggleSound(); return notificationsModal(); }
+    if (action === "notification-read") {
+      const item = window.ServiqNotifications?.getState().items.find((item) => Number(item.id) === id);
+      await window.ServiqNotifications?.markRead([id]);
+      if (item?.link?.startsWith("#/")) { closeModal(); nav(item.link.slice(2)); }
+      return;
     }
     if (action === "pos-product") {
       await documentModal("sale");
@@ -1572,10 +1690,18 @@ document.addEventListener("submit", async (event) => {
       return await renderPage();
     }
     if (form.id === "resource-form") {
-      await api(
+      const uploads = form.dataset.resource === "employees" ? $("[name=employee_upload]", form) : null;
+      if (uploads) validateEmployeeFiles(pendingEmployeeFiles(uploads));
+      delete data.employee_upload;
+      const saved = await api(
         `resources/${form.dataset.resource}${form.dataset.id ? "/" + form.dataset.id : ""}`,
         { method: form.dataset.id ? "PUT" : "POST", body: data },
       );
+      if (saved.id) form.dataset.id = String(saved.id);
+      if (uploads && pendingEmployeeFiles(uploads).length) {
+        try { await uploadEmployeeFiles(Number(form.dataset.id), uploads); }
+        catch (error) { throw localizedClientError(t("تم حفظ بيانات الموظف. أعد المحاولة لرفع الملفات المتبقية:") + " " + pendingEmployeeFiles(uploads).map((file) => file.name).join(", ") + " — " + errorText(error)); }
+      }
       await refreshBoot();
     } else if (form.id === "document-form") {
       if (
@@ -1608,22 +1734,13 @@ document.addEventListener("submit", async (event) => {
         body: data,
       });
     else if (form.id === "file-form") {
-      const file = $("[name=upload]", form).files[0];
-      if (!file) throw new Error("اختر الملف");
-      if (file.size > 2 * 1024 * 1024)
-        throw new Error("الحد الأقصى 2 ميجابايت");
-      const encoded = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(",")[1]);
-        reader.onerror = () => reject(new Error("تعذّر قراءة الملف"));
-        reader.readAsDataURL(file);
-      });
-      await api(`employees/${form.dataset.id}/files`, {
-        method: "POST",
-        body: { name: file.name, content: encoded },
-      });
+      const input = $("[name=upload]", form);
+      const files = pendingEmployeeFiles(input);
+      if (!files.length) throw new Error("اختر الملفات");
+      validateEmployeeFiles(files);
+      await uploadEmployeeFiles(Number(form.dataset.id), input);
       await employeeFilesModal(Number(form.dataset.id));
-      toast("تم حفظ الملف");
+      toast("تم حفظ الملفات");
       return;
     } else if (form.id === "simple-form")
       await api(form.dataset.endpoint, { method: "POST", body: data });
@@ -1679,6 +1796,7 @@ document.addEventListener("input", (event) => {
     filterTable(el.value);
   }
   if (el.dataset.line !== undefined) {
+    if (quotePricingLocked() && el.dataset.field === "price") { renderDocLines(); return; }
     const index = Number(el.dataset.line);
     state.documentLines[index][el.dataset.field] = Number(el.value);
     const l = state.documentLines[index];
@@ -1687,11 +1805,23 @@ document.addEventListener("input", (event) => {
     ));
     updateDocSummary();
   }
+  if (quotePricingLocked() && ["discount", "tax_rate"].includes(el.name)) el.value = el.name === "discount" ? 0 : state.boot.settings.tax_rate;
   if (["discount", "tax_rate", "paid"].includes(el.name)) updateDocSummary();
 });
 document.addEventListener("change", async (event) => {
   const el = event.target;
   try {
+    if (el.type === "file") el._pendingEmployeeFiles = [...el.files];
+    if (quotePricingLocked() && ["customer_id", "date"].includes(el.name)) {
+      const cid = Number($("[name=customer_id]")?.value);
+      const date = $("[name=date]")?.value || dateNow();
+      state.documentLines.forEach((line) => {
+        const product = catalogItems().find((item) => item.id === line.product_id);
+        const offers = (state.catalog.prices || []).filter((offer) => offer.product_id === line.product_id && (!offer.customer_id || offer.customer_id === cid) && offer.start_date <= date && offer.end_date >= date).sort((a, b) => Number(Boolean(b.customer_id)) - Number(Boolean(a.customer_id)) || b.id - a.id);
+        line.price = offers[0]?.price ?? product?.price ?? 0;
+      });
+      renderDocLines();
+    }
     if (el.id === "status-filter") filterTable(state.search);
     if (el.name === "warehouse_id") renderDocLines();
     if (el.name === "original_document" && el.value) {
@@ -1723,7 +1853,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (event.key === "Enter" && event.target.id === "barcode-input") {
     event.preventDefault();
-    const p = state.catalog.products.find(
+    const p = catalogItems().find(
       (p) =>
         p.barcode === event.target.value.trim() ||
         p.sku === event.target.value.trim(),

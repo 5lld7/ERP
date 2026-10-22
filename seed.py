@@ -17,7 +17,7 @@ def seed_demo(db,user):
     for index,(name,cost,price) in enumerate([('كرسي مكتبي مريح',1250,1850),('مكتب خشبي 160 سم',2800,4200),('وحدة أدراج متحركة',950,1450),('طاولة اجتماعات',4600,6900),('خزانة ملفات معدنية',1700,2600),('حامل شاشة قابل للتعديل',380,650)]):
         products.append(erp.save_resource(db,'products',dict(name=name,sku=f'PRD-{index+1:03}',barcode=f'622100000{index+1:04}',category_id=cat,unit_id=unit,cost=cost,price=price,min_stock=5),uid))
     clients=[]
-    for name,cls in [('شركة الأفق للتجارة','مميز'),('مؤسسة النور','جملة'),('شركة بداية للحلول','عادي'),('مبيعات نقدية','عادي')]:
+    for name,cls in [('شركة الأفق للتجارة','مميز'),('مؤسسة النور','مؤسسة'),('شركة بداية للحلول','عادي'),('مبيعات نقدية','عادي')]:
         clients.append(erp.save_resource(db,'customers',dict(name=name,classification=cls,credit_limit=200000,payment_terms=30),uid))
     supplier=erp.save_resource(db,'suppliers',dict(name='الشركة المتحدة للتوريدات',payment_terms=30),uid)
     department=erp.save_resource(db,'departments',dict(name='الإدارة والمبيعات'),uid)

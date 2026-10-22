@@ -164,7 +164,25 @@ ERRORS = {
     'إصدار قاعدة البيانات أحدث من إصدار التطبيق المنشور.': 'The database schema is newer than the deployed application.',
 }
 
+ERRORS.update({
+    'الخدمات لا تدخل في حركات المخزون': 'Services cannot be included in stock movements.',
+    'تعديل الخصم والضريبة في عرض السعر متاح للمدير فقط': 'Only the administrator can change quotation discounts and tax.',
+    'الخدمات متاحة في المعاينات والمبيعات فقط': 'Services are available only in inspections and sales.',
+    'تعديل سعر عرض السعر متاح للمدير فقط': 'Only the administrator can change quotation prices.',
+    'تعديل الأسعار والعروض متاح للمدير فقط': 'Only the administrator can change prices and offers.',
+    'اختر إشعارات صحيحة لتحديدها كمقروءة': 'Select valid notifications to mark as read.',
+})
+
 FIELD_LABELS = {
+    'اسم الوحدة بالإنجليزية': 'Unit name in English',
+    'اسم الخدمة': 'Service name', 'كود الخدمة': 'Service code',
+    'سعر الخدمة': 'Service price', 'طريقة عمل الخدمة': 'Service method',
+    'تاريخ المعاينة': 'Inspection date', 'وقت المعاينة': 'Inspection time',
+    'رقم التليفون': 'Phone number', 'نوع الخدمة': 'Service type', 'نوع الموقع': 'Site type',
+    'رقم البطاقة أو الإقامة': 'ID card or residence permit number', 'الجنسية': 'Nationality',
+    'تاريخ انتهاء الإقامة': 'Residence permit expiry date',
+    'تاريخ انتهاء جواز السفر': 'Passport expiry date',
+    'تاريخ انتهاء رخصة القيادة': 'Driving licence expiry date',
     'اسم الفرع': 'Branch name', 'اسم المخزن': 'Warehouse name', 'العنوان': 'Address', 'الهاتف': 'Phone',
     'الفرع': 'Branch', 'اسم التصنيف': 'Category name', 'الوحدة': 'Unit', 'اسم الصنف': 'Item name',
     'كود الصنف': 'SKU', 'الباركود': 'Barcode', 'التصنيف': 'Category', 'تكلفة الشراء': 'Purchase cost',
@@ -243,7 +261,7 @@ COLUMNS = {
 }
 KINDS = {
     'purchase': ('فاتورة مشتريات', 'Purchase invoice'), 'purchase_return': ('مرتجع مشتريات', 'Purchase return'),
-    'purchase_order': ('أمر شراء', 'Purchase order'), 'receipt': ('استلام أصناف / رصيد افتتاحي', 'Goods receipt / opening stock'),
+    'purchase_order': ('أمر شراء', 'Purchase order'), 'receipt': ('استلام أصناف', 'Goods receipt'),
     'sale': ('فاتورة مبيعات', 'Sales invoice'), 'sale_return': ('مرتجع مبيعات', 'Sales return'),
     'inspection': ('معاينة وعرض سعر', 'Inspection / quotation'), 'transfer': ('تحويل بين المخازن', 'Warehouse transfer'),
     'issue': ('صرف / تالف', 'Stock issue / damage'), 'adjustment': ('جرد وتسوية مخزون', 'Stock count / adjustment'),

@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, quote
 
 import erp
+import notifications
 import quotations
 from currencies import currency_metadata, validate_currency_change
 from localization import csv_headers, csv_row_values, request_language, translate_error
@@ -32,6 +33,12 @@ REPORT_MODULES = {
     'supplier_balances':'accounting','statement':'accounting','cashflow':'accounting',
     'payroll':'hr','attendance':'hr','assets':'accounting',
 }
+
+
+def permitted_reports(user):
+    if user['role'] == 'technician':
+        return {'inspections': 'sales'}
+    return {name: module for name, module in REPORT_MODULES.items() if erp.can(user, module)}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -115,7 +122,7 @@ class Handler(BaseHTTPRequestHandler):
             if not path.startswith('/api/'):
                 if method!='GET':
                     return self.respond({'error':'غير مسموح'},405)
-                files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/i18n.js':('i18n.js','text/javascript; charset=utf-8'),'/locales/en-ui.json':('locales/en-ui.json','application/json; charset=utf-8'),'/locales/en-data.json':('locales/en-data.json','application/json; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8'),'/favicon.svg':('favicon.svg','image/svg+xml')}
+                files={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/i18n.js':('i18n.js','text/javascript; charset=utf-8'),'/notifications.js':('notifications.js','text/javascript; charset=utf-8'),'/locales/en-ui.json':('locales/en-ui.json','application/json; charset=utf-8'),'/locales/en-data.json':('locales/en-data.json','application/json; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8'),'/favicon.svg':('favicon.svg','image/svg+xml')}
                 if path not in files:
                     return self.respond({'error':'الصفحة غير موجودة'},404)
                 file,mime=files[path]
@@ -179,6 +186,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond({'ok':True},headers=headers)
             if not user:
                 return self.respond({'error':'يرجى تسجيل الدخول'},401)
+            if path == '/api/notifications' and method == 'GET':
+                with erp.transaction(db):
+                    snapshot = notifications.get_notifications(db, user)
+                return self.respond(snapshot)
+            if path == '/api/notifications/read' and method == 'POST':
+                data = self.json_body()
+                with erp.transaction(db):
+                    snapshot = notifications.mark_read(db, user, data.get('ids'))
+                return self.respond(snapshot)
             if path=='/api/logout' and method=='POST':
                 with erp.transaction(db):
                     db.execute('DELETE FROM sessions WHERE token=?',(digest,))
@@ -188,11 +204,13 @@ class Handler(BaseHTTPRequestHandler):
                 # employee files, supplier costs, or financial account balances.
                 refs={}
                 for name in RESOURCES_FOR_REFS:
-                    cols='id,name,code' if name=='accounts' else 'id,name'
+                    if user['role']=='technician' and name in ('suppliers','employees','accounts','departments','jobs'):
+                        continue
+                    cols='id,name,code' if name=='accounts' else 'id,name,code,name_en' if name=='units' else 'id,name'
                     refs[name]=[dict(r) for r in db.execute(f'SELECT {cols} FROM {name} ORDER BY name')]
                 resources={name:spec for name,spec in erp.RESOURCES.items() if erp.can(user,spec['module'])}
                 company_settings=erp.settings(db)
-                return self.respond({'user':user,'settings':company_settings,'resources':resources,'refs':refs,'kinds':{k:v for k,v in erp.KINDS.items() if erp.can(user,v[1])},'roles':erp.ROLES,'reports':{k:v for k,v in REPORT_MODULES.items() if erp.can(user,v)},'serverless':bool(os.environ.get('VERCEL')),**currency_metadata(db,company_settings['currency'])})
+                return self.respond({'user':user,'settings':company_settings,'resources':resources,'refs':refs,'kinds':{k:v for k,v in erp.KINDS.items() if erp.document_allowed(user,k)},'roles':erp.ROLES,'reports':permitted_reports(user),'serverless':bool(os.environ.get('VERCEL')),**currency_metadata(db,company_settings['currency'])})
             if path=='/api/dashboard' and method=='GET':
                 return self.respond(erp.dashboard(db,user))
             parts=path.strip('/').split('/')
@@ -202,6 +220,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond({'error':'القسم غير موجود'},404)
                 spec=erp.RESOURCES[name]
                 erp.require(user,spec['module'],method!='GET')
+                if name=='price_lists' and method!='GET' and user['role']!='admin':
+                    raise PermissionError('تعديل الأسعار والعروض متاح للمدير فقط')
                 eid=int(parts[3]) if len(parts)==4 else None
                 if method=='GET':
                     return self.respond(erp.list_resource(db,name))
@@ -217,7 +237,11 @@ class Handler(BaseHTTPRequestHandler):
                             r=db.execute(f'SELECT * FROM {name} WHERE id=?',(eid,)).fetchone()
                             if r and db.execute('SELECT 1 FROM payroll_lines WHERE employee_id=? AND month=?',(r['employee_id'],r['date'][:7])).fetchone():
                                 raise erp.BusinessError('لا يمكن حذف حضور مستخدم في مسير مرحّل')
-                        db.execute(f'DELETE FROM {name} WHERE id=?',(eid,))
+                        target = erp.resource_table(name)
+                        condition = erp.resource_filter(name)
+                        if not db.execute(f'SELECT 1 FROM {target} WHERE id=? AND {condition}', (eid,)).fetchone():
+                            raise erp.BusinessError('السجل غير موجود')
+                        db.execute(f'DELETE FROM {target} WHERE id=? AND {condition}',(eid,))
                         erp.audit(db,user['id'],'حذف',name,eid)
                     else:
                         return self.respond({'error':'عملية غير مسموحة'},405)
@@ -226,12 +250,17 @@ class Handler(BaseHTTPRequestHandler):
                 if not any(erp.can(user,m) for m in ('sales','inventory','accounting')):
                     raise PermissionError('غير مسموح')
                 products=erp.list_resource(db,'products')
+                services=erp.list_resource(db,'services')
                 if not erp.can(user,'accounting') and not erp.can(user,'inventory'):
-                    for p in products:
+                    for p in products+services:
                         p.pop('cost',None)
+                # Service instructions belong only in the final quotation PDF.
+                # Catalog metadata shown to technicians never exposes the method.
+                for service in services:
+                    service.pop('service_method', None)
                 prices=erp.list_resource(db,'price_lists') if erp.can(user,'sales') else []
                 stocks=[dict(r) for r in db.execute('SELECT warehouse_id,product_id,quantity FROM stock')]
-                return self.respond({'products':products,'stocks':stocks,'prices':prices})
+                return self.respond({'products':products,'services':services,'stocks':stocks,'prices':prices})
             if len(parts)==4 and parts[1]=='employees' and parts[3]=='files':
                 erp.require(user,'hr',method!='GET')
                 eid=int(parts[2])
@@ -281,9 +310,13 @@ class Handler(BaseHTTPRequestHandler):
                 code.save(out)
                 return self.respond({'svg':out.getvalue().decode('utf-8')})
             if path=='/api/documents' and method=='GET':
-                kinds=[k for k,s in erp.KINDS.items() if erp.can(user,s[1])]
-                if params.get('kind') in kinds:
+                kinds=[kind for kind in erp.KINDS if erp.document_allowed(user,kind)]
+                if params.get('kind'):
+                    if params['kind'] not in kinds:
+                        raise PermissionError('غير مسموح')
                     kinds=[params['kind']]
+                if not kinds:
+                    return self.respond([])
                 marks=','.join('?' for _ in kinds)
                 rows=db.execute(f"SELECT d.id,d.number,d.kind,d.date,d.status,d.progress,d.appointment_date,d.total/100.0 total,d.paid/100.0 paid,d.source_id,COALESCE(c.name,s.name,'—') party,w.name warehouse FROM documents d LEFT JOIN customers c ON c.id=d.customer_id LEFT JOIN suppliers s ON s.id=d.supplier_id JOIN warehouses w ON w.id=d.warehouse_id WHERE d.kind IN ({marks}) ORDER BY d.id DESC",kinds).fetchall()
                 return self.respond([dict(r) for r in rows])
@@ -309,10 +342,12 @@ class Handler(BaseHTTPRequestHandler):
                         return self.respond(result)
                     return self.respond({'error':'عملية غير مسموحة'},405)
                 doc=erp.document_detail(db,did)
-                erp.require(user,erp.KINDS[doc['kind']][1],method!='GET')
+                if not erp.document_allowed(user,doc['kind'],method!='GET'):
+                    raise PermissionError('غير مسموح')
                 if method=='GET' and len(parts)==3:
-                    if user['role']=='sales':
-                        for line in doc['lines']:
+                    for line in doc['lines']:
+                        line.pop('service_method',None)
+                        if user['role'] in ('sales','technician'):
                             line.pop('cost',None)
                     return self.respond(doc)
                 if method=='POST' and len(parts)==4 and parts[3]=='post':
@@ -405,6 +440,8 @@ class Handler(BaseHTTPRequestHandler):
                 name=parts[2]
                 if name not in REPORT_MODULES:
                     raise erp.BusinessError('التقرير غير موجود')
+                if name not in permitted_reports(user):
+                    raise PermissionError('غير مسموح')
                 erp.require(user,REPORT_MODULES[name])
                 rows=erp.report(db,name,params)
                 if params.get('format')=='csv':

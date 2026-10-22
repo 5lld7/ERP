@@ -232,7 +232,7 @@ class QuotationCase(unittest.TestCase):
             self.assertTrue(copied[0].startswith(b'%PDF-'))
             self.assertEqual(copied[1], hashlib.sha256(token.encode()).hexdigest())
             self.assertEqual(target.execute('PRAGMA foreign_key_check').fetchall(), [])
-            self.assertEqual(read_schema_version(target), 4)
+            self.assertEqual(read_schema_version(target), erp.SCHEMA_VERSION)
         finally:
             target.close()
             native.close()
@@ -245,7 +245,7 @@ class QuotationCase(unittest.TestCase):
             self.db.execute('DROP TABLE document_shares')
         erp.initialize()
         self.assertEqual(erp.settings(self.db)['currency'], 'ج.م')
-        self.assertEqual(read_schema_version(self.db), 4)
+        self.assertEqual(read_schema_version(self.db), erp.SCHEMA_VERSION)
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM document_shares').fetchone()[0], 0)
 
 

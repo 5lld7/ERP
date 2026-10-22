@@ -433,6 +433,27 @@ small {
   width: 20px;
   height: 20px;
 }
+.notification-count {
+  position: absolute;
+  inset-block-start: -5px;
+  inset-inline-end: -7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 21px;
+  height: 20px;
+  padding-inline: 4px;
+  border: 2px solid #fff;
+  border-radius: 12px;
+  background: #b42318;
+  color: #fff;
+  font: 700 11px/1 Arial, sans-serif;
+  box-shadow: 0 1px 4px #142d4e20;
+  pointer-events: none;
+}
+.notification-count.is-zero {
+  background: #627287;
+}
 .notification i {
   position: absolute;
   top: 6px;
@@ -1917,6 +1938,56 @@ tbody tr:hover {
 .notification-list > a > .icon {
   width: 19px;
   height: 19px;
+}
+.notification-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-block-end: 18px;
+}
+.notification-item {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 15px;
+  margin-block-end: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  text-align: start;
+  color: var(--ink);
+}
+.notification-item.is-unread {
+  border-color: #b9dcd6;
+  background: #edf7f5;
+}
+.notification-item.is-read {
+  color: #627287;
+}
+.notification-item:hover {
+  border-color: var(--teal);
+}
+.notification-item > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.notification-item strong,
+.notification-item small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.notification-item small {
+  margin-block-start: 5px;
+  font-size: 11px;
+  line-height: 1.8;
+}
+.unread-dot {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--teal);
 }
 .confirm-message {
   font-size: 13px;

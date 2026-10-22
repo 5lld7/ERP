@@ -179,13 +179,19 @@ def run(directory, entrypoint='local'):
                 sidebar = page.locator('.sidebar').bounding_box()
                 assert sidebar['x'] == 0, sidebar
                 page.locator('.sidebar a[href="#/inventory"]').click()
-                page.wait_for_selector('.module-intro')
+                assert page.locator('.sidebar a[href="#/inventory"]').get_attribute('aria-expanded') == 'false'
+                assert page.locator('#report-content table').is_visible()
+                assert 'menu-open' in page.locator('body').get_attribute('class')
+                page.locator('.sidebar a[href="#/inventory"]').click()
+                assert page.locator('.sidebar a[href="#/inventory"]').get_attribute('aria-expanded') == 'true'
+                page.locator('.sidebar a[href="#/products"]').click()
+                page.wait_for_selector('tbody tr')
                 assert 'menu-open' not in page.locator('body').get_attribute('class')
-                no_overflow(page, 'English mobile inventory')
+                no_overflow(page, 'English mobile products')
                 language(page, 'ar')
-                page.wait_for_selector('.module-intro')
+                page.wait_for_selector('tbody tr')
                 assert ARABIC.search(page.locator('.page-heading h1').inner_text())
-                no_overflow(page, 'Arabic mobile inventory')
+                no_overflow(page, 'Arabic mobile products')
                 page.locator('button[data-action=menu]').click()
                 page.wait_for_selector('body.menu-open')
                 page.wait_for_function("Math.abs(document.querySelector('.sidebar').getBoundingClientRect().right - innerWidth) < 1")
